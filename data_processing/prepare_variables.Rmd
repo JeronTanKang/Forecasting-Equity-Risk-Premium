@@ -1,0 +1,172 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# install.packages(c("readxl","dplyr")) 
+```
+
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ranger)
+library(writexl)
+library(corrplot)
+library(zoo) 
+#library(MASS)
+```
+
+
+```{r}
+
+#df <- read_excel("../data/goyal_predictors.xlsx", sheet = "Monthly")
+df <- read_excel("../data/goyal_predictors.xlsx", sheet = "Monthly", col_types = rep("numeric", ncol(read_excel("../data/goyal_predictors.xlsx", sheet = "Monthly", n_max = 0))))
+df
+
+keep_predictors_long <- c(
+  "yyyymm",
+  "ret", "Rfree",
+  "d12","e12",
+  "BAA","lty","d/p","d/y","e/p","d/e",
+  "tms","dfy","dfr","svar","infl",
+  "AAA","tbl","b/m","ltr","corpr","lzrt",
+  "wtexas","dtoy","dtoat","avgcor",
+  "skvw","tail","rdsp","ntis"
+)
+
+keep_predictors_short<- c(
+  "yyyymm",
+  "ret", "Rfree",
+  "d12","e12",
+  "BAA","lty","d/p","d/y","e/p","d/e",
+  "tms","dfy","dfr","svar","infl",
+  "AAA","tbl","b/m","ltr","corpr","lzrt",
+  "wtexas","dtoy","dtoat","avgcor",
+  "skvw","tail","rdsp","ntis",
+  'ygap', 'ndrbl',
+  
+  "rsvix", 'vp', 'vrp', 'impvar', 'rsvix'
+)
+
+#keep_predictors_clean_long <- make.names(keep_predictors_long)
+
+#keep_predictors_clean_short <- make.names(keep_predictors_short)
+
+
+df_long <- df %>%
+  mutate(.yyyymm_num = as.integer(gsub("[^0-9]", "", as.character(yyyymm)))) %>%
+  filter(!is.na(.yyyymm_num), between(.yyyymm_num, 194901L, 202412L)) %>%
+  select(-.yyyymm_num)  %>%
+  select(any_of(keep_predictors_long))# keep all original columns
+
+df_short <- df %>%
+  mutate(.yyyymm_num = as.integer(gsub("[^0-9]", "", as.character(yyyymm)))) %>%
+  filter(!is.na(.yyyymm_num), between(.yyyymm_num, 194901L, 202412L)) %>%
+  select(-.yyyymm_num)  %>%
+  select(any_of(keep_predictors_short))# keep all original columns
+
+df_long
+df_short
+```
+
+read in starting 1949 so that i will have an extra year to lag data. 
+
+```{r}
+# filter for 195001 to 202308 to check data availability
+# this is the range that we will conduct the study on
+
+df_date_filtered_long <- df_long %>%
+  mutate(.yyyymm_num = as.integer(gsub("[^0-9]", "", as.character(yyyymm)))) %>%
+  filter(!is.na(.yyyymm_num), between(.yyyymm_num, 194901L, 202308L)) %>%
+  select(-.yyyymm_num)
+
+df_date_filtered_long
+```
+
+
+
+
+```{r}
+# check for NAs or zeros
+print('check for NAs or zeros for keep_predictors_clean_long')
+# NA checks on df
+anyNA(df_date_filtered_long)                  # any NA?
+sum(is.na(df_date_filtered_long))             # total NA count
+colSums(is.na(df_date_filtered_long))         # NA count per column
+
+# Row indices with any NA
+rows_with_na <- which(!complete.cases(df_date_filtered_long))
+rows_with_na
+
+```
+
+
+```{r}
+# filter for 195001 to 202308 to check data availability
+# this is the range that we will conduct the study on
+
+df_date_filtered_short <- df_short %>%
+  mutate(.yyyymm_num = as.integer(gsub("[^0-9]", "", as.character(yyyymm)))) %>%
+  filter(!is.na(.yyyymm_num), between(.yyyymm_num, 199501L, 202112L)) %>%
+  select(-.yyyymm_num)
+
+df_date_filtered_short
+```
+
+
+
+
+```{r}
+# check for NAs or zeros
+print('check for NAs or zeros for df_date_filtered_short')
+# NA checks on df
+anyNA(df_date_filtered_short)                  # any NA?
+sum(is.na(df_date_filtered_short))             # total NA count
+colSums(is.na(df_date_filtered_short))         # NA count per column
+
+# Row indices with any NA
+#rows_with_na <- which(!complete.cases(df_date_filtered_short))
+#rows_with_na
+
+```
+
+
+```{r}
+#export to excel
+write_xlsx(df_date_filtered_long, "../data/cleaned_predictors_long.xlsx")      
+write_xlsx(df_date_filtered_short, "../data/cleaned_predictors_short.xlsx")      
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
