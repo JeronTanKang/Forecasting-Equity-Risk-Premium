@@ -22,6 +22,7 @@ df = df %>% select (yyyymm, ret, Rfree, price, d12, e12, lty, tms, dfy, dfr, sva
 df_diff = df %>% mutate(date = as.Date(paste0(sprintf("%06d", yyyymm), "01"), "%Y%m%d"))%>% select(-yyyymm) %>%
   select(date, erp, everything())
 
+#determined by looking at the plots of the indicators
 model_dict <- list(
   ret = "constant",
   Rfree = "trend",
@@ -123,11 +124,14 @@ lag_features <- function(data, lags = 4) {
     ))
 }
 df_lagged = lag_features(df_stationary) %>% arrange(desc(date)) %>% drop_na()
+df_lagged_std = df_lagged %>% mutate(across(where(is.numeric) & !any_of(c("date","erp")),
+                                                ~ (.-mean(., na.rm=TRUE))/sd(., na.rm=TRUE)))
+
 write.csv(df_lagged, "stationary_indicators.csv", row.names = FALSE)
 
 
 
-
+## plot graph of indicators to see if trend or constant for model_dict
 plot_stationarity <- function(df, date_col = "date", cols = NULL, add_trend = TRUE) {
   stopifnot(date_col %in% names(df))
   
