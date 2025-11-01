@@ -1,4 +1,4 @@
-## this file gets the indcators chosen by lasso for h=1,3,6,12
+## this file gets the plug in lambda chosen by rlasso()  for h=1,3,6,12
 
 #load library
 library(fredr)
@@ -41,7 +41,8 @@ tune_lasso_h1 <- function(df) {
     filter(coefficient != 0, variable != "(Intercept)") %>% mutate(Importance = abs(coefficient)) %>%
     arrange(desc(Importance)) %>% select(variable) %>% pull(variable) %>% as.character()
   
-  return(selected_vars)
+  penalty <- lasso_model$lambda0
+  return(penalty)
 }
 tune_lasso_h1(df)
 
@@ -66,8 +67,8 @@ tune_lasso_h3 <- function(df) {
   selected_vars <- coeff_df %>%
     filter(coefficient != 0, variable != "(Intercept)") %>% mutate(Importance = abs(coefficient)) %>%
     arrange(desc(Importance)) %>% select(variable) %>% pull(variable) %>% as.character()
-  
-  return(selected_vars)
+  penalty <- lasso_model$lambda0
+  return(penalty)
 }
 tune_lasso_h3(df)
 
@@ -93,7 +94,8 @@ tune_lasso_h6 <- function(df) {
     filter(coefficient != 0, variable != "(Intercept)") %>% mutate(Importance = abs(coefficient)) %>%
     arrange(desc(Importance)) %>% select(variable) %>% pull(variable) %>% as.character()
   
-  return(selected_vars)
+  penalty <- lasso_model$lambda0
+  return(penalty)
 }
 tune_lasso_h6(df)
 
@@ -119,6 +121,8 @@ tune_lasso_h12 <- function(df) {
     filter(coefficient != 0, variable != "(Intercept)") %>% mutate(Importance = abs(coefficient)) %>%
     arrange(desc(Importance)) %>% select(variable) %>% pull(variable) %>% as.character()
   
-  return(selected_vars)
+  penalty <- lasso_model$lambda0
+  return(penalty)
 }
 tune_lasso_h12(df)
+
