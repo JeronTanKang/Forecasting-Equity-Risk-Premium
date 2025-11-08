@@ -18,7 +18,7 @@ df = read.csv(file_path)
 tune_pls_h1 <- function(df, max_comp = 10, min_train = 100) {
   
   # 1. sort by date ascending
-  df <- df %>%
+  df <- df %>% 
     arrange(date)
   
   # 2. build Y = ERP at t+1
@@ -95,11 +95,11 @@ print(h1_comp) # 1 component
 
 ###################################################
 # Fit  PLS on all training data using h1_comp
-# to retrieve frozen loadings 
+# to retrieve frozen weights 
 ###################################################
 build_pls_h1 <- function(df, h1_comp, save_path = "../code/pls_structure_h1.rds") {
   
-  # 1. align data for horizon h=3 (target is ERP at t+3)
+  # 1. align data for horizon h=1 (target is ERP at t+1)
   train_df <- df %>%
     mutate(date = as.Date(date)) %>%
     arrange(date) %>%
@@ -123,7 +123,7 @@ build_pls_h1 <- function(df, h1_comp, save_path = "../code/pls_structure_h1.rds"
   X_train_std <- scale(X_train_full, center = X_means, scale = X_sds)
   X_train_std <- as.data.frame(X_train_std)
   
-  # 5. fit PLS on standardized X to predict Y(t+3)
+  # 5. fit PLS on standardized X to predict Y(t+1)
   pls_fit_full <- plsr(
     Y_train_full ~ .,
     data   = X_train_std,
@@ -132,7 +132,7 @@ build_pls_h1 <- function(df, h1_comp, save_path = "../code/pls_structure_h1.rds"
     method = "oscorespls"
   )
   
-  # 6. extract frozen loadings (weights for components)
+  # 6. extract frozen  (weights for components)
   W_full <- pls_fit_full$loading.weights[, 1:h1_comp, drop = FALSE]
   # rows of W_full line up with predictor_cols order
   
@@ -142,7 +142,7 @@ build_pls_h1 <- function(df, h1_comp, save_path = "../code/pls_structure_h1.rds"
     predictor_cols = predictor_cols, # column order lock-in
     X_means        = X_means,        # training means for scaling new data
     X_sds          = X_sds,          # training sds for scaling new data
-    W_full         = W_full          # frozen loadings matrix
+    W_full         = W_full          # frozen weights matrix
   )
   
   # 8. save to disk so h3_model() can load it later
@@ -162,7 +162,8 @@ pls_h1_struct <- build_pls_h1(df, h1_comp)
 tune_pls_h3 <- function(df, max_comp = 10, min_train = 100) {
   
   # 1. sort by date ascending
-  df <- df %>%
+  df <- df %>% 
+    mutate(date = as.Date(date)) %>%
     arrange(date)
   
   # 2. build Y = ERP at t+3
@@ -239,7 +240,7 @@ print(h3_comp) # 2 Components
 
 ###################################################
 # Fit  PLS on all training data using h3_comp
-# to retrieve frozen loadings 
+# to retrieve frozen weights 
 ###################################################
 
 build_pls_h3 <- function(df, h3_comp, save_path = "../code/pls_structure_h3.rds") {
@@ -277,7 +278,7 @@ build_pls_h3 <- function(df, h3_comp, save_path = "../code/pls_structure_h3.rds"
     method = "oscorespls"
   )
   
-  # 6. extract frozen loadings (weights for components)
+  # 6. extract frozen (weights for components)
   W_full <- pls_fit_full$loading.weights[, 1:h3_comp, drop = FALSE]
   # rows of W_full line up with predictor_cols order
   
@@ -287,7 +288,7 @@ build_pls_h3 <- function(df, h3_comp, save_path = "../code/pls_structure_h3.rds"
     predictor_cols = predictor_cols, # column order lock-in
     X_means        = X_means,        # training means for scaling new data
     X_sds          = X_sds,          # training sds for scaling new data
-    W_full         = W_full          # frozen loadings matrix
+    W_full         = W_full          # frozen weights matrix
   )
   
   # 8. save to disk so h3_model() can load it later
@@ -307,7 +308,8 @@ pls_h3_struct <- build_pls_h3(df, h3_comp)
 tune_pls_h6 <- function(df, max_comp = 10, min_train = 100) {
   
   # 1. sort by date ascending
-  df <- df %>%
+  df <- df %>% 
+    mutate(date = as.Date(date)) %>%
     arrange(date)
   
   # 2. build Y = ERP at t+6
@@ -384,7 +386,7 @@ print(h6_comp) # 2 Components
 
 ###################################################
 # Fit  PLS on all training data using h6_comp
-# to retrieve frozen loadings 
+# to retrieve frozen weights 
 ###################################################
 
 build_pls_h6 <- function(df, h6_comp, save_path = "../code/pls_structure_h6.rds") {
@@ -422,7 +424,7 @@ build_pls_h6 <- function(df, h6_comp, save_path = "../code/pls_structure_h6.rds"
     method = "oscorespls"
   )
   
-  # 6. extract frozen loadings (weights for components)
+  # 6. extract frozen (weights for components)
   W_full <- pls_fit_full$loading.weights[, 1:h6_comp, drop = FALSE]
   # rows of W_full line up with predictor_cols order
   
@@ -432,7 +434,7 @@ build_pls_h6 <- function(df, h6_comp, save_path = "../code/pls_structure_h6.rds"
     predictor_cols = predictor_cols, # column order lock-in
     X_means        = X_means,        # training means for scaling new data
     X_sds          = X_sds,          # training sds for scaling new data
-    W_full         = W_full          # frozen loadings matrix
+    W_full         = W_full          # frozen weights matrix
   )
   
   # 8. save to disk so h6_model() can load it later
@@ -453,7 +455,8 @@ pls_h6_struct <- build_pls_h6(df, h6_comp)
 tune_pls_h12 <- function(df, max_comp = 10, min_train = 100) {
   
   # 1. sort by date ascending
-  df <- df %>%
+  df <- df %>% 
+    mutate(date = as.Date(date)) %>%
     arrange(date)
   
   # 2. build Y = ERP at t+12
@@ -531,7 +534,7 @@ print(h12_comp) # 1 Components
 
 ###################################################
 # Fit  PLS on all training data using h12_comp
-# to retrieve frozen loadings 
+# to retrieve frozen weights  
 ###################################################
 
 build_pls_h12 <- function(df, h12_comp, save_path = "../code/pls_structure_h12.rds") {
@@ -569,7 +572,7 @@ build_pls_h12 <- function(df, h12_comp, save_path = "../code/pls_structure_h12.r
     method = "oscorespls"
   )
   
-  # 6. extract frozen loadings (weights for components)
+  # 6. extract frozen weights
   W_full <- pls_fit_full$loading.weights[, 1:h12_comp, drop = FALSE]
   # rows of W_full line up with predictor_cols order
   
@@ -579,7 +582,7 @@ build_pls_h12 <- function(df, h12_comp, save_path = "../code/pls_structure_h12.r
     predictor_cols = predictor_cols, # column order lock-in
     X_means        = X_means,        # training means for scaling new data
     X_sds          = X_sds,          # training sds for scaling new data
-    W_full         = W_full          # frozen loadings matrix
+    W_full         = W_full          # frozen weights matrix
   )
   
   # 8. save to disk so h6_model() can load it later
@@ -666,7 +669,6 @@ pls_model <- function(df, h) {
     sds_vec   = X_sds
   )
   
-  # project onto frozen PLS loadings
   # Scores_all: [rows x n_comp]
   Scores_all <- X_all_std %*% W_full
   
@@ -701,4 +703,5 @@ pls_model <- function(df, h) {
   
   as.numeric(pred_next)
 }
+
 
