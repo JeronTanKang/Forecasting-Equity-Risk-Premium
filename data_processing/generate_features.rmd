@@ -1,7 +1,0 @@
-```{r}
-1. collate data from goyal predictors, fred md, yfinance (vol), create technical indicators
-
-2. feature engineering: create lags, stationarity (fractal something), create new variables (e.g. yield spread BAA-AAA, etc), try non linear (square of values)
-
-3. output cleaned_data.xlsx
-```
