@@ -145,7 +145,7 @@ build_pls_h1 <- function(df, h1_comp, save_path = "../code/pls_structure_h1.rds"
     W_full         = W_full          # frozen weights matrix
   )
   
-  # 8. save to disk so h3_model() can load it later
+  # 8. save to disk so pls_model() can load it later
   saveRDS(pls_structure, file = save_path)
   message("Saved ", save_path)
   
@@ -291,7 +291,7 @@ build_pls_h3 <- function(df, h3_comp, save_path = "../code/pls_structure_h3.rds"
     W_full         = W_full          # frozen weights matrix
   )
   
-  # 8. save to disk so h3_model() can load it later
+  # 8. save to disk so pls_model() can load it later
   saveRDS(pls_structure, file = save_path)
   message("Saved ", save_path)
   
@@ -437,7 +437,7 @@ build_pls_h6 <- function(df, h6_comp, save_path = "../code/pls_structure_h6.rds"
     W_full         = W_full          # frozen weights matrix
   )
   
-  # 8. save to disk so h6_model() can load it later
+  # 8. save to disk so pls_model() can load it later
   saveRDS(pls_structure, file = save_path)
   message("Saved ", save_path)
   
@@ -585,7 +585,7 @@ build_pls_h12 <- function(df, h12_comp, save_path = "../code/pls_structure_h12.r
     W_full         = W_full          # frozen weights matrix
   )
   
-  # 8. save to disk so h6_model() can load it later
+  # 8. save to disk so pls_model() can load it later
   saveRDS(pls_structure, file = save_path)
   message("Saved ", save_path)
   
