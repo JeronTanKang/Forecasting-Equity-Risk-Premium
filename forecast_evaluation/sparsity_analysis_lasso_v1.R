@@ -1,3 +1,4 @@
+# This code plots out the number of indicators chosen by Lasso_v1 throughout the forecast window. Change h = 1/3/6/12
 
 library(ggplot2)
 library(dplyr)
@@ -8,6 +9,7 @@ library(tidyr)
 library(hdm)
 # Load data
 df = read.csv("../data/full_df.csv") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
+
 
 #change this h to 1/3/6/12 for which ever step 
 h = 1
@@ -127,4 +129,5 @@ ggplot(res_df, aes(x = date)) +
   ) +
   theme_minimal() +
   scale_color_manual(values = c("technical" = "blue", "total" = "grey"))
+
 
