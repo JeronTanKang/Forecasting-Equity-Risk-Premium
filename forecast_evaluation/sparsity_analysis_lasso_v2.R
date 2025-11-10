@@ -1,3 +1,4 @@
+# This code plots out the number of indicators chosen by Lasso_v2 throughout the forecast window. Change h = 1/3/6/12
 
 library(ggplot2)
 library(dplyr)
@@ -158,4 +159,5 @@ ggplot(res_df, aes(x = date)) +
   ) +
   theme_minimal() +
   scale_color_manual(values = c("technical" = "blue", "total" = "grey"))
+
 
