@@ -92,7 +92,7 @@ make_stationary_dfgls <- function(df, model_dict, max_lags = 4, max_differences 
           
           # Run DF-GLS test on the cleaned data
           test <- ur.ers(test_data, type = "DF-GLS", model = model_type, lag.max = max_lags)
-          
+          summary(test)
           # tstat and critval
           test_stat <- test@teststat
           critical_value <- test@cval[3] #use 10% significance level
@@ -133,8 +133,36 @@ lag_features <- function(data, lags = 3) {
       .names = "{.col}_{.fn}" 
     ))
 }
-df_lagged = lag_features(df_stationary) %>% arrange(desc(date)) %>% drop_na() 
-df_train= df_lagged %>% filter(row_number() > 100)
-df_test = df_lagged %>% filter(row_number() <= 100)
+df_lagged = lag_features(df_stationary) %>% arrange(desc(date)) %>% drop_na() %>% arrange(date) %>% select(-infl, -ndrbl, -e12, -e_p, -d_e)
+df_train = df_lagged %>% filter(row_number() > 100) %>% arrange(date)
 write.csv(df_train, "stationary_indicators.csv", row.names = FALSE)
-write.csv(df_test, "df_test.csv", row.names = FALSE)
+write.csv(df_lagged, "full_df.csv", row.names = FALSE)
+
+
+
+# function that plots the series to see if trend or constant
+plot_stationarity <- function(df, date_col = "date", cols = NULL, add_trend = TRUE) {
+  stopifnot(date_col %in% names(df))
+  
+  if (is.null(cols)) {
+    cols <- names(df)[sapply(df, is.numeric)]
+  }
+  stopifnot(all(cols %in% names(df)))
+  
+  long <- df %>%
+    select(all_of(c(date_col, cols))) %>%
+    rename(date = !!date_col) %>%
+    pivot_longer(-date, names_to = "series", values_to = "value") %>%
+    arrange(date)
+  
+  p <- ggplot(long, aes(x = date, y = value)) +
+    geom_line() +
+    facet_wrap(~ series, scales = "free_y", ncol = 2) +
+    labs(x = NULL, y = NULL, title = "Visual stationarity check") +
+    theme_minimal(base_size = 12)
+  
+  if (add_trend) p <- p + geom_smooth(method = "lm", se = FALSE)
+  
+  print(p)
+}
+plot_stationarity(df_diff, date_col = "date", cols = c('Rfree'))  
