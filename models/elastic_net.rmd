@@ -1,0 +1,49 @@
+Load packages: 
+```{r}
+library(glmnet)
+library(dplyr)
+```
+
+Function for elastic net h step ahead forecast. 
+To be used in the model code chunk in forecast_evaluation.rmd. 
+
+NOTE: hardcoded hyperparameter values are taken from the individual tuning scripts
+
+```{r}
+model <- function(df, h){
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = lead(erp, n = h)) %>% select(date, target, everything())
+  df_train = df_std %>% slice(1:(n() - h))
+  
+  if (h == 1) {
+    alpha_star  <- 0.10   
+    lambda_star <- 0.0403702
+  } else if (h == 3) {
+    alpha_star  <- 0.10   
+    lambda_star <- 0.0403702
+  } else if (h == 6) {
+    alpha_star  <- 0.10  
+    lambda_star <- 0.0403702
+  } else if (h == 12) {
+    alpha_star  <- 0.10   
+    lambda_star <- 0.0403702
+  } 
+
+  y = df_train %>% pull(target)  
+  x = df_train %>% select(-target, -date) %>% as.matrix()
+
+  elnet <- glmnet(
+    x = x,
+    y = y,
+    alpha = alpha_star,
+    lambda = lambda_star,
+    standardize = FALSE)
+
+  df_forecast = df_std %>% slice(n()-h+1) %>% select(all_of(colnames(x))) %>% as.matrix()
+
+  # 6) Predict
+  pred <- predict(elnet, newx = df_forecast, s = lambda_star)
+
+  return(pred)
+}
+```

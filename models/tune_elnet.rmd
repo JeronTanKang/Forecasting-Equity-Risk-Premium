@@ -1,0 +1,508 @@
+Load packages:
+```{r}
+library(glmnet)
+library(dplyr)
+```
+
+############################################################
+Hyperparameter tuning for Elastic Net regression: 
+Returns best (alpha, lambda) for each forecast horizon h = 1,3,6,12
+which is used in elastic_net.rmd
+############################################################
+
+
+1. h1: 
+
+```{r}
+elnet_h1 <- function(df) {
+
+  df <- read.csv("../data/stationary_indicators.csv")
+
+  df_std <- df %>%
+    arrange(date) %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>%
+    mutate(Y = lead(erp, n = 1))
+
+  predictor_cols <- setdiff(names(df_std), c("date","Y"))  
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  keep <- !is.na(Y)
+  X_clean <- X[keep, , drop = FALSE]
+  Y_clean <- Y[keep]
+
+  rows_count <- nrow(X_clean)
+  min_train_size <- 127
+  validation_size <- rows_count - min_train_size
+
+  # Grids
+  alpha_grid  <- seq(0, 1, length = 11)    
+  lambda_grid <- 10^seq(5, -2, length = 100)
+
+  # Store results per alpha (min-only)
+  alpha_results <- data.frame(
+    alpha      = numeric(0),
+    lambda_min = numeric(0),
+    mse_min    = numeric(0)
+  )
+
+  # Outer loop over alpha
+  for (alpha_val in alpha_grid) {
+
+    # Collect per-fold squared errors for every lambda
+    mse_matrix <- matrix(NA_real_, nrow = validation_size, ncol = length(lambda_grid))
+
+    fold_idx <- 1
+    for (i in (min_train_size + 1):rows_count) {
+      train_end <- i - 1
+      val_start <- i
+
+      fold_fit <- glmnet(
+        x = X_clean[1:train_end, , drop = FALSE],
+        y = Y_clean[1:train_end],
+        alpha = alpha_val,
+        lambda = lambda_grid,
+        standardize = FALSE
+      )
+
+      pred <- predict(fold_fit, newx = X_clean[val_start, , drop = FALSE], s = lambda_grid)
+      mse_matrix[fold_idx, ] <- as.numeric((Y_clean[val_start] - pred)^2)
+      fold_idx <- fold_idx + 1
+    }
+
+    # Mean MSE across folds per lambda
+    mean_mse  <- colMeans(mse_matrix)
+    min_idx   <- which.min(mean_mse)
+    lambda_min <- lambda_grid[min_idx]
+    mse_min    <- mean_mse[min_idx]
+
+    alpha_results <- rbind(alpha_results, data.frame(
+      alpha = alpha_val,
+      lambda_min = lambda_min,
+      mse_min = mse_min
+    ))
+
+    cat(sprintf("  λ_min = %.6g (MSE = %.6g)\n", lambda_min, mse_min))
+  }
+
+  cat("\n=== Summary of Alpha Search (min-only) ===\n")
+  print(alpha_results, row.names = FALSE)
+
+  # Select best (alpha, lambda) by minimum CV MSE
+  best_idx   <- which.min(alpha_results$mse_min)
+  best_alpha <- alpha_results$alpha[best_idx]
+  best_lambda <- alpha_results$lambda_min[best_idx]
+  best_mse    <- alpha_results$mse_min[best_idx]
+
+  cat("\n=== Best Hyperparameters (min-only) ===\n")
+  cat(sprintf("α* = %.2f, λ* = %.6g, CV MSE = %.6g\n\n", best_alpha, best_lambda, best_mse))
+
+  # 4) Final refit on all available rows
+  final_fit <- glmnet(
+    x = X_clean,
+    y = Y_clean,
+    alpha = best_alpha,
+    lambda = best_lambda,
+    standardize = FALSE
+  )
+
+  # Coefficients
+  coef_sparse <- coef(final_fit, s = best_lambda)
+  coef_df <- data.frame(
+    term = c("(Intercept)", predictor_cols),
+    coef = as.numeric(coef_sparse)
+  )
+
+  n_nonzero <- sum(abs(coef_df$coef[-1]) > 1e-10)
+  cat(sprintf("Final model: %d non-zero coefficients (out of %d predictors)\n",
+              n_nonzero, length(predictor_cols)))
+
+  cat("\n=== All Coefficients Sorted by Magnitude ===\n")
+  coef_sorted <- coef_df[order(-abs(coef_df$coef)), ]
+  print(coef_sorted, row.names = FALSE)
+
+  list(
+    best_alpha = best_alpha,
+    best_lambda = best_lambda,
+    best_mse = best_mse,
+    alpha_search_results = alpha_results,
+    coefficients = coef_df,
+    coefficients_sorted = coef_sorted,
+    glmnet_fit = final_fit,
+    predictors = predictor_cols,
+    n_nonzero = n_nonzero
+  )
+}
+```
+
+2. h3
+
+```{r}
+elnet_h3() <- function(df) {
+
+  df <- read.csv("../data/stationary_indicators.csv")
+
+  df_std <- df %>%
+    arrange(date) %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>%
+    mutate(Y = lead(erp, n = 3))
+
+  predictor_cols <- setdiff(names(df_std), c("date","Y"))  
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  keep <- !is.na(Y)
+  X_clean <- X[keep, , drop = FALSE]
+  Y_clean <- Y[keep]
+
+  rows_count <- nrow(X_clean)
+  min_train_size <- 125
+  validation_size <- rows_count - min_train_size
+
+  # Grids
+  alpha_grid  <- seq(0, 1, length = 11)    
+  lambda_grid <- 10^seq(5, -2, length = 100)
+
+  # Store results per alpha (min-only)
+  alpha_results <- data.frame(
+    alpha      = numeric(0),
+    lambda_min = numeric(0),
+    mse_min    = numeric(0)
+  )
+
+  # Outer loop over alpha
+  for (alpha_val in alpha_grid) {
+
+    # Collect per-fold squared errors for every lambda
+    mse_matrix <- matrix(NA_real_, nrow = validation_size, ncol = length(lambda_grid))
+
+    fold_idx <- 1
+    for (i in (min_train_size + 1):rows_count) {
+      train_end <- i - 1
+      val_start <- i
+
+      fold_fit <- glmnet(
+        x = X_clean[1:train_end, , drop = FALSE],
+        y = Y_clean[1:train_end],
+        alpha = alpha_val,
+        lambda = lambda_grid,
+        standardize = FALSE
+      )
+
+      pred <- predict(fold_fit, newx = X_clean[val_start, , drop = FALSE], s = lambda_grid)
+      mse_matrix[fold_idx, ] <- as.numeric((Y_clean[val_start] - pred)^2)
+      fold_idx <- fold_idx + 1
+    }
+
+    # Mean MSE across folds per lambda
+    mean_mse  <- colMeans(mse_matrix)
+    min_idx   <- which.min(mean_mse)
+    lambda_min <- lambda_grid[min_idx]
+    mse_min    <- mean_mse[min_idx]
+
+    alpha_results <- rbind(alpha_results, data.frame(
+      alpha = alpha_val,
+      lambda_min = lambda_min,
+      mse_min = mse_min
+    ))
+
+    cat(sprintf("  λ_min = %.6g (MSE = %.6g)\n", lambda_min, mse_min))
+  }
+
+  cat("\n=== Summary of Alpha Search (min-only) ===\n")
+  print(alpha_results, row.names = FALSE)
+
+  # Select best (alpha, lambda) by minimum CV MSE
+  best_idx   <- which.min(alpha_results$mse_min)
+  best_alpha <- alpha_results$alpha[best_idx]
+  best_lambda <- alpha_results$lambda_min[best_idx]
+  best_mse    <- alpha_results$mse_min[best_idx]
+
+  cat("\n=== Best Hyperparameters (min-only) ===\n")
+  cat(sprintf("α* = %.2f, λ* = %.6g, CV MSE = %.6g\n\n", best_alpha, best_lambda, best_mse))
+
+  # Final refit on all available rows
+  final_fit <- glmnet(
+    x = X_clean,
+    y = Y_clean,
+    alpha = best_alpha,
+    lambda = best_lambda,
+    standardize = FALSE
+  )
+
+  # Coefficients
+  coef_sparse <- coef(final_fit, s = best_lambda)
+  coef_df <- data.frame(
+    term = c("(Intercept)", predictor_cols),
+    coef = as.numeric(coef_sparse)
+  )
+
+  n_nonzero <- sum(abs(coef_df$coef[-1]) > 1e-10)
+  cat(sprintf("Final model: %d non-zero coefficients (out of %d predictors)\n",
+              n_nonzero, length(predictor_cols)))
+
+  cat("\n=== All Coefficients Sorted by Magnitude ===\n")
+  coef_sorted <- coef_df[order(-abs(coef_df$coef)), ]
+  print(coef_sorted, row.names = FALSE)
+
+  list(
+    best_alpha = best_alpha,
+    best_lambda = best_lambda,
+    best_mse = best_mse,
+    alpha_search_results = alpha_results,
+    coefficients = coef_df,
+    coefficients_sorted = coef_sorted,
+    glmnet_fit = final_fit,
+    predictors = predictor_cols,
+    n_nonzero = n_nonzero
+  )
+}
+```
+
+3. h6:
+```{r}
+elnet_h6() <- function(df) {
+
+  df <- read.csv("../data/stationary_indicators.csv")
+
+  df_std <- df %>%
+    arrange(date) %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>%
+    mutate(Y = lead(erp, n = 6))
+
+  predictor_cols <- setdiff(names(df_std), c("date","Y"))  
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  keep <- !is.na(Y)
+  X_clean <- X[keep, , drop = FALSE]
+  Y_clean <- Y[keep]
+
+  rows_count <- nrow(X_clean)
+  min_train_size <- 122
+  validation_size <- rows_count - min_train_size
+
+  # Grids
+  alpha_grid  <- seq(0, 1, length = 11)    
+  lambda_grid <- 10^seq(5, -2, length = 100)
+
+  # Store results per alpha (min-only)
+  alpha_results <- data.frame(
+    alpha      = numeric(0),
+    lambda_min = numeric(0),
+    mse_min    = numeric(0)
+  )
+
+  # Outer loop over alpha
+  for (alpha_val in alpha_grid) {
+
+    # Collect per-fold squared errors for every lambda
+    mse_matrix <- matrix(NA_real_, nrow = validation_size, ncol = length(lambda_grid))
+
+    fold_idx <- 1
+    for (i in (min_train_size + 1):rows_count) {
+      train_end <- i - 1
+      val_start <- i
+
+      fold_fit <- glmnet(
+        x = X_clean[1:train_end, , drop = FALSE],
+        y = Y_clean[1:train_end],
+        alpha = alpha_val,
+        lambda = lambda_grid,
+        standardize = FALSE
+      )
+
+      pred <- predict(fold_fit, newx = X_clean[val_start, , drop = FALSE], s = lambda_grid)
+      mse_matrix[fold_idx, ] <- as.numeric((Y_clean[val_start] - pred)^2)
+      fold_idx <- fold_idx + 1
+    }
+
+    # Mean MSE across folds per lambda
+    mean_mse  <- colMeans(mse_matrix)
+    min_idx   <- which.min(mean_mse)
+    lambda_min <- lambda_grid[min_idx]
+    mse_min    <- mean_mse[min_idx]
+
+    alpha_results <- rbind(alpha_results, data.frame(
+      alpha = alpha_val,
+      lambda_min = lambda_min,
+      mse_min = mse_min
+    ))
+
+    cat(sprintf("  λ_min = %.6g (MSE = %.6g)\n", lambda_min, mse_min))
+  }
+
+  cat("\n=== Summary of Alpha Search (min-only) ===\n")
+  print(alpha_results, row.names = FALSE)
+
+  # Select best (alpha, lambda) by minimum CV MSE
+  best_idx   <- which.min(alpha_results$mse_min)
+  best_alpha <- alpha_results$alpha[best_idx]
+  best_lambda <- alpha_results$lambda_min[best_idx]
+  best_mse    <- alpha_results$mse_min[best_idx]
+
+  cat("\n=== Best Hyperparameters (min-only) ===\n")
+  cat(sprintf("α* = %.2f, λ* = %.6g, CV MSE = %.6g\n\n", best_alpha, best_lambda, best_mse))
+
+  # Final refit 
+  final_fit <- glmnet(
+    x = X_clean,
+    y = Y_clean,
+    alpha = best_alpha,
+    lambda = best_lambda,
+    standardize = FALSE
+  )
+
+  # Coefficients
+  coef_sparse <- coef(final_fit, s = best_lambda)
+  coef_df <- data.frame(
+    term = c("(Intercept)", predictor_cols),
+    coef = as.numeric(coef_sparse)
+  )
+
+  n_nonzero <- sum(abs(coef_df$coef[-1]) > 1e-10)
+  cat(sprintf("Final model: %d non-zero coefficients (out of %d predictors)\n",
+              n_nonzero, length(predictor_cols)))
+
+  cat("\n=== All Coefficients Sorted by Magnitude ===\n")
+  coef_sorted <- coef_df[order(-abs(coef_df$coef)), ]
+  print(coef_sorted, row.names = FALSE)
+
+  list(
+    best_alpha = best_alpha,
+    best_lambda = best_lambda,
+    best_mse = best_mse,
+    alpha_search_results = alpha_results,
+    coefficients = coef_df,
+    coefficients_sorted = coef_sorted,
+    glmnet_fit = final_fit,
+    predictors = predictor_cols,
+    n_nonzero = n_nonzero
+  )
+}
+```
+
+
+4. h12:
+```{r}
+elnet_h6() <- function(df) {
+
+  df <- read.csv("../data/stationary_indicators.csv")
+
+  df_std <- df %>%
+    arrange(date) %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>%
+    mutate(Y = lead(erp, n = 12))
+
+  predictor_cols <- setdiff(names(df_std), c("date","Y"))  
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  keep <- !is.na(Y)
+  X_clean <- X[keep, , drop = FALSE]
+  Y_clean <- Y[keep]
+
+  rows_count <- nrow(X_clean)
+  min_train_size <- 116
+  validation_size <- rows_count - min_train_size
+
+  # Grids
+  alpha_grid  <- seq(0, 1, length = 11)    
+  lambda_grid <- 10^seq(5, -2, length = 100)
+
+  # Store results per alpha (min-only)
+  alpha_results <- data.frame(
+    alpha      = numeric(0),
+    lambda_min = numeric(0),
+    mse_min    = numeric(0)
+  )
+
+  # Outer loop over alpha
+  for (alpha_val in alpha_grid) {
+
+    # Collect per-fold squared errors for every lambda
+    mse_matrix <- matrix(NA_real_, nrow = validation_size, ncol = length(lambda_grid))
+
+    fold_idx <- 1
+    for (i in (min_train_size + 1):rows_count) {
+      train_end <- i - 1
+      val_start <- i
+
+      fold_fit <- glmnet(
+        x = X_clean[1:train_end, , drop = FALSE],
+        y = Y_clean[1:train_end],
+        alpha = alpha_val,
+        lambda = lambda_grid,
+        standardize = FALSE
+      )
+
+      pred <- predict(fold_fit, newx = X_clean[val_start, , drop = FALSE], s = lambda_grid)
+      mse_matrix[fold_idx, ] <- as.numeric((Y_clean[val_start] - pred)^2)
+      fold_idx <- fold_idx + 1
+    }
+
+    # Mean MSE across folds per lambda
+    mean_mse  <- colMeans(mse_matrix)
+    min_idx   <- which.min(mean_mse)
+    lambda_min <- lambda_grid[min_idx]
+    mse_min    <- mean_mse[min_idx]
+
+    alpha_results <- rbind(alpha_results, data.frame(
+      alpha = alpha_val,
+      lambda_min = lambda_min,
+      mse_min = mse_min
+    ))
+
+    cat(sprintf("  λ_min = %.6g (MSE = %.6g)\n", lambda_min, mse_min))
+  }
+
+  cat("\n=== Summary of Alpha Search (min-only) ===\n")
+  print(alpha_results, row.names = FALSE)
+
+  # Select best (alpha, lambda) by minimum CV MSE
+  best_idx   <- which.min(alpha_results$mse_min)
+  best_alpha <- alpha_results$alpha[best_idx]
+  best_lambda <- alpha_results$lambda_min[best_idx]
+  best_mse    <- alpha_results$mse_min[best_idx]
+
+  cat("\n=== Best Hyperparameters (min-only) ===\n")
+  cat(sprintf("α* = %.2f, λ* = %.6g, CV MSE = %.6g\n\n", best_alpha, best_lambda, best_mse))
+
+  # Final refit 
+  final_fit <- glmnet(
+    x = X_clean,
+    y = Y_clean,
+    alpha = best_alpha,
+    lambda = best_lambda,
+    standardize = FALSE
+  )
+
+  # Coefficients
+  coef_sparse <- coef(final_fit, s = best_lambda)
+  coef_df <- data.frame(
+    term = c("(Intercept)", predictor_cols),
+    coef = as.numeric(coef_sparse)
+  )
+
+  n_nonzero <- sum(abs(coef_df$coef[-1]) > 1e-10)
+  cat(sprintf("Final model: %d non-zero coefficients (out of %d predictors)\n",
+              n_nonzero, length(predictor_cols)))
+
+  cat("\n=== All Coefficients Sorted by Magnitude ===\n")
+  coef_sorted <- coef_df[order(-abs(coef_df$coef)), ]
+  print(coef_sorted, row.names = FALSE)
+
+  list(
+    best_alpha = best_alpha,
+    best_lambda = best_lambda,
+    best_mse = best_mse,
+    alpha_search_results = alpha_results,
+    coefficients = coef_df,
+    coefficients_sorted = coef_sorted,
+    glmnet_fit = final_fit,
+    predictors = predictor_cols,
+    n_nonzero = n_nonzero
+  )
+}
+```
+

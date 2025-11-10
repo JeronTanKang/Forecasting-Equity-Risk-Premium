@@ -1,0 +1,47 @@
+Load packages:
+```{r}
+library(glmnet)
+library(dplyr)
+```
+
+
+Function for ridge h step ahead forecast. 
+To be used in the model code chunk in forecast_evaluation.rmd. 
+
+NOTE: hardcoded hyperparameter values are taken from the individual tuning scripts
+
+```{r}
+model <- function(df, h){
+  # standardise predictors 
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date) 
+  # create new target column by leading erp by h steps
+  df_std = df_std %>% mutate(target = lead(erp, n = h)) %>% select(date, target, everything())
+  df_train = df_std %>% slice(1:(n() - h))
+  
+  if (h == 1){
+    pi_lambda <- 0.376494
+  }
+  else if (h == 3){
+    pi_lambda <- 0.497702
+  }
+  else if (h == 6){
+    pi_lambda <- 100000
+  }
+  else if (h ==12){
+    pi_lambda <- 6.13591
+  }
+    
+  y = df_train %>% pull(target)  
+
+  x = df_train %>% select(-target, -date) %>% as.matrix()  
+
+  ridge_model <- glmnet(x, y, alpha = 0, lambda = pi_lambda, standardize = FALSE)
+
+  # forecast data (the row h steps from the end)
+  df_forecast = df_std %>% slice(n()-h+1) %>% select(-date, -target) %>% as.matrix()
+
+  pred <- predict(ridge_model, newx = df_forecast, s = pi_lambda)
+
+  return(pred)
+}
+```

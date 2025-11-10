@@ -1,0 +1,288 @@
+Load packages:
+```{r}
+library(glmnet)
+library(dplyr)
+```
+
+############################################################
+Hyperparameter tuning for Ridge regression: 
+Returns best lambda for each forecast horizon h = 1,3,6,12
+which is used in ridge.rmd
+############################################################
+
+
+1. h1: 
+```{r}
+tune_ridge_h1 <- function(df) {
+
+  df <- read.csv("../data/stationary_indicators.csv")
+  
+  # v
+  df_std <- df %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% 
+    arrange(date) %>%  
+    mutate(Y = lead(erp, n = 1))  
+
+  # Create predictor matrix X (all columns except 'date' and 'erp')
+  predictor_cols <- setdiff(colnames(df_std), c("date", "Y"))
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  # Remove last row (where Y is NA) for consistent training/test
+  valid_rows <- !is.na(Y)
+  X_clean <- X[valid_rows, , drop = FALSE]
+  Y_clean <- Y[valid_rows]
+
+  n_obs <- nrow(X_clean)
+  n_predictors <- ncol(X_clean)
+
+  cat(sprintf("Total observations: %d\n", n_obs))
+  cat(sprintf("Number of predictors: %d\n", n_predictors))
+
+  # Define lambda grid for Ridge regression 
+  lambda_grid = 10^seq(5, -2, length = 100)  
+
+  # Number of observations (n_obs) and minimum training size
+  min_train_size  <- 127
+  rows_count      <- nrow(X_clean)          # should be 227
+  validation_size <- rows_count - min_train_size # should be 100
+
+  # Initialize variables to store results
+  mse_results <- data.frame(lambda = numeric(0), mse = numeric(0))
+
+  # Folds: i = 128..227  (100 folds)
+  for (i in (min_train_size + 1):rows_count) {
+    train_end <- i - 1   
+    val_start <- i       
+
+    fold_train_X <- X_clean[1:train_end, , drop = FALSE]
+    fold_train_Y <- Y_clean[1:train_end]
+    fold_val_X   <- X_clean[val_start, , drop = FALSE]
+    fold_val_Y   <- Y_clean[val_start]
+
+    fold_ridge   <- glmnet(fold_train_X, fold_train_Y, alpha = 0,
+                        lambda = lambda_grid, standardize = FALSE)  
+    preds_1xL  <- predict(fold_ridge, newx = fold_val_X, s = lambda_grid)
+    fold_mse       <- as.numeric((fold_val_Y - preds_1xL)^2)
+
+    mse_results <- rbind(mse_results, data.frame(lambda = lambda_grid, mse = fold_mse))
+  }
+
+  avg_mse     <- aggregate(mse ~ lambda, data = mse_results, mean)
+  best_lambda <- avg_mse$lambda[which.min(avg_mse$mse)]
+
+  cat(sprintf("λ* = %.6g | CV MSE = %.6g (over %d folds)\n",
+              best_lambda, min(avg_mse$mse), validation_size))
+
+  
+  return(best_lambda) 
+}
+
+```
+
+
+2. h3:
+```{r}
+tune_ridge_h3 <- function(df) {
+
+  df <- read.csv("../data/stationary_indicators.csv")
+  
+  # Standardize predictors & create new column for target variable Y = erp at t+3
+  df_std <- df %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% 
+    arrange(date) %>% 
+    mutate(Y = lead(erp, n = 3))  
+
+  # Create predictor matrix X (all columns except 'date' and 'erp')
+  predictor_cols <- setdiff(colnames(df_std), c("date", "Y"))
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  # Remove last 3 rows (where Y is NA for t+3) for consistent training/test
+  valid_rows <- !is.na(Y)
+  X_clean <- X[valid_rows, , drop = FALSE]
+  Y_clean <- Y[valid_rows]
+
+  n_obs <- nrow(X_clean)
+  n_predictors <- ncol(X_clean)
+
+  cat(sprintf("Total observations: %d\n", n_obs))
+  cat(sprintf("Number of predictors: %d\n", n_predictors))
+
+  # Define lambda grid for Ridge regression
+  lambda_grid = 10^seq(5, -2, length = 100)  
+
+  # Number of observations (n_obs) and minimum training size
+  min_train_size  <- 125
+  rows_count      <- nrow(X_clean)          # should be 225
+  validation_size <- rows_count - min_train_size # should be 100
+
+  # Initialize variables to store results
+  mse_results <- data.frame(lambda = numeric(0), mse = numeric(0))
+
+  # Folds: i = 128..225  (100 folds)
+  for (i in (min_train_size + 1):rows_count) {
+    train_end <- i - 1    
+    val_start <- i        
+
+    fold_train_X <- X_clean[1:train_end, , drop = FALSE]
+    fold_train_Y <- Y_clean[1:train_end]
+    fold_val_X   <- X_clean[val_start, , drop = FALSE]
+    fold_val_Y   <- Y_clean[val_start]
+
+    fold_ridge   <- glmnet(fold_train_X, fold_train_Y, alpha = 0,
+                           lambda = lambda_grid, standardize = FALSE)  # you pre-scaled
+    preds_1xL  <- predict(fold_ridge, newx = fold_val_X, s = lambda_grid)
+    fold_mse   <- as.numeric((fold_val_Y - preds_1xL)^2)
+
+    mse_results <- rbind(mse_results, data.frame(lambda = lambda_grid, mse = fold_mse))
+  }
+
+  avg_mse     <- aggregate(mse ~ lambda, data = mse_results, mean)
+  best_lambda <- avg_mse$lambda[which.min(avg_mse$mse)]
+
+  cat(sprintf("λ* = %.6g | CV MSE = %.6g (over %d folds)\n",
+              best_lambda, min(avg_mse$mse), validation_size))
+
+  return(best_lambda) 
+}
+
+``` 
+
+
+
+3. h6:
+```{r}
+tune_ridge_h6 <- function(df) {
+  # Read in data
+  df <- read.csv("../data/stationary_indicators.csv")
+  
+  # Standardize predictors & create new column for target variable Y = erp at t+6
+  df_std <- df %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% #
+    arrange(date) %>%  
+    mutate(Y = lead(erp, n = 6))  
+
+  # Create predictor matrix X (all columns except 'date' and 'erp')
+  predictor_cols <- setdiff(colnames(df_std), c("date", "Y"))
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  # Remove last 6 rows (where Y is NA for t+6) for consistent training/test
+  valid_rows <- !is.na(Y)
+  X_clean <- X[valid_rows, , drop = FALSE]
+  Y_clean <- Y[valid_rows]
+
+  n_obs <- nrow(X_clean)
+  n_predictors <- ncol(X_clean)
+
+  cat(sprintf("Total observations: %d\n", n_obs))
+  cat(sprintf("Number of predictors: %d\n", n_predictors))
+
+  # Define lambda grid for Ridge regression
+  lambda_grid = 10^seq(5, -2, length = 100)  
+
+  # Number of observations (n_obs) and minimum training size
+  min_train_size  <- 122  # Now 222 observations after shifting by 6 months
+  rows_count      <- nrow(X_clean)          # should be 222
+  validation_size <- rows_count - min_train_size # should be 100
+
+  # Initialize variables to store results
+  mse_results <- data.frame(lambda = numeric(0), mse = numeric(0))
+
+  # Folds: 
+  for (i in (min_train_size + 1):rows_count) {
+    train_end <- i - 1
+    val_start <- i
+
+    fold_train_X <- X_clean[1:train_end, , drop = FALSE]
+    fold_train_Y <- Y_clean[1:train_end]
+    fold_val_X   <- X_clean[val_start, , drop = FALSE]
+    fold_val_Y   <- Y_clean[val_start]
+
+    fold_ridge   <- glmnet(fold_train_X, fold_train_Y, alpha = 0,
+                           lambda = lambda_grid, standardize = FALSE)  
+    preds_1xL  <- predict(fold_ridge, newx = fold_val_X, s = lambda_grid)
+    fold_mse   <- as.numeric((fold_val_Y - preds_1xL)^2)
+
+    mse_results <- rbind(mse_results, data.frame(lambda = lambda_grid, mse = fold_mse))
+  }
+
+  avg_mse     <- aggregate(mse ~ lambda, data = mse_results, mean)
+  best_lambda <- avg_mse$lambda[which.min(avg_mse$mse)]
+
+  cat(sprintf("λ* = %.6g | CV MSE = %.6g (over %d folds)\n",
+              best_lambda, min(avg_mse$mse), validation_size))
+
+  return(best_lambda) 
+}
+``` 
+
+
+4. h12:
+```{r}
+tune_ridge_h12 <- function(df) {
+  # Read in data
+  df <- read.csv("../data/stationary_indicators.csv")
+  
+  # Standardize predictors & create new column for target variable Y = erp at t+12
+  df_std <- df %>%
+    mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% #
+    arrange(date) %>%  
+    mutate(Y = lead(erp, n = 12))  
+
+  # Create predictor matrix X (all columns except 'date' and 'erp')
+  predictor_cols <- setdiff(colnames(df_std), c("date", "Y"))
+  X <- as.matrix(df_std[, predictor_cols])
+  Y <- df_std$Y
+
+  # Remove last 12 rows (where Y is NA for t+12) for consistent training/test
+  valid_rows <- !is.na(Y)
+  X_clean <- X[valid_rows, , drop = FALSE]
+  Y_clean <- Y[valid_rows]
+
+  n_obs <- nrow(X_clean)
+  n_predictors <- ncol(X_clean)
+
+  cat(sprintf("Total observations: %d\n", n_obs))
+  cat(sprintf("Number of predictors: %d\n", n_predictors))
+
+  # Define lambda grid for Ridge regression
+  lambda_grid = 10^seq(5, -2, length = 100)  
+
+  # Number of observations (n_obs) and minimum training size
+  min_train_size  <- 116  # Now 216 observations after shifting by 12 months
+  rows_count      <- nrow(X_clean)          # should be 216
+  validation_size <- rows_count - min_train_size # still 100
+
+  # Initialize variables to store results
+  mse_results <- data.frame(lambda = numeric(0), mse = numeric(0))
+
+  # Folds: 
+  for (i in (min_train_size + 1):rows_count) {
+    train_end <- i - 1
+    val_start <- i
+
+    fold_train_X <- X_clean[1:train_end, , drop = FALSE]
+    fold_train_Y <- Y_clean[1:train_end]
+    fold_val_X   <- X_clean[val_start, , drop = FALSE]
+    fold_val_Y   <- Y_clean[val_start]
+
+    fold_ridge   <- glmnet(fold_train_X, fold_train_Y, alpha = 0,
+                           lambda = lambda_grid, standardize = FALSE)  
+    preds <- predict(fold_ridge, newx = fold_val_X, s = lambda_grid)
+    fold_mse   <- as.numeric((fold_val_Y - preds)^2)
+
+    mse_results <- rbind(mse_results, data.frame(lambda = lambda_grid, mse = fold_mse))
+  }
+
+  avg_mse     <- aggregate(mse ~ lambda, data = mse_results, mean)
+  best_lambda <- avg_mse$lambda[which.min(avg_mse$mse)]
+
+  cat(sprintf("λ* = %.6g | CV MSE = %.6g (over %d folds)\n",
+              best_lambda, min(avg_mse$mse), validation_size))
+
+  return(best_lambda) 
+}
+``` 
+
