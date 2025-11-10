@@ -1,3 +1,5 @@
+### This code plots out the coefficients of each indicators selected by Lasso_v2 over the forecast window.
+### Specify h=1/3/6/12 at line 15
 
 library(ggplot2)
 library(dplyr)
@@ -9,11 +11,6 @@ library(hdm)
 # Load data
 df = read.csv("../data/full_df.csv") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
 
-
-
-
-### This code plots out the coefficients of each indicators selected by Lasso_v2 over the forecast window.
-### Specify h=1/3/6/12 at line 18
 
 h = 1
 
@@ -170,3 +167,4 @@ ggplot(res_filtered$preds_df, aes(date, coefficient, color = variable)) +
   theme_minimal() +
 
   theme(legend.position = "none")
+
