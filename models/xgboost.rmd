@@ -7,7 +7,105 @@ library(dplyr)
 Function for xgboost h step ahead forecast. 
 To be used in the model code chunk in forecast_evaluation.rmd. 
 
-NOTE: hardcoded hyperparameter values are taken from the individual tuning scripts
+```{r}
+# run this code cell to get the tuned values for nrounds, max_depth and eta
+
+h_values <- c(1, 3, 6, 12)
+xgb_out   <- vector("list", length(h_values))
+names(xgb_out) <- paste0("h", h_values)
+total_grid <- NA_integer_
+
+for (h in h_values) {
+  start_h <- Sys.time()
+  cat(sprintf("[%s] Start tuning for h=%d\n", format(start_h, "%H:%M:%S"), h))
+  
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = dplyr::lead(erp, n = h)) %>% select(date, target, everything())
+
+  df_forecast = df_std %>% dplyr::slice(n()-h+1)
+  df_train = df_std %>% dplyr::slice(1:(n() - h))
+
+  feats <- setdiff(names(df_std), c("date", "target"))
+
+  x_train <- as.matrix(df_train[, feats, drop = FALSE]) 
+  y_train <- df_train$target
+
+  x_forecast <- as.matrix(df_forecast[, feats, drop=FALSE])
+  y_forecast <- df_forecast$target
+
+  set.seed(456857)
+  p <- ncol(x_train)
+  n <- nrow(x_train)
+  
+  # --- time-series CV with rolling origin ---
+  initialWindow <- 128  # 100 windows rolling over trainval set of 228 obs (row 1 to row 227)
+  ctrl <- trainControl(
+    method = "timeslice",
+    initialWindow = initialWindow,
+    horizon = 1,            # one-step validation at each origin (y already = t+h)
+    fixedWindow = TRUE,
+    verboseIter = TRUE,
+    savePredictions = "final",
+    allowParallel = TRUE,
+  )
+  
+  # --- tuning grid (keep trees shallow; conservative eta) ---
+  grid <- expand.grid(
+    nrounds = c(500, 5000, 10000),
+    max_depth = c(2, 5),
+    eta = c(0.01, 0.1),
+    gamma = 0,
+    colsample_bytree = 0.5,
+    min_child_weight = 1,
+    subsample = 0.5
+  )
+  total_grid <- nrow(grid)
+  cat(sprintf("  Grid size: %d combos\n", total_grid))
+  
+  timing <- system.time({
+    suppressWarnings({
+      xgb_fit <- train(
+        x = x_train, y = y_train,
+        method = "xgbTree",
+        trControl = ctrl,
+        tuneGrid = grid,
+        metric = "RMSE",
+        verbosity = 0
+      )
+    })
+  })
+  
+  end_h <- Sys.time()
+  cat(sprintf("[%s] Finished h=%d | elapsed: %.1fs | best RMSE: %.4f\n",
+              format(end_h, "%H:%M:%S"), h, as.numeric(timing["elapsed"]),
+              min(xgb_fit$results$RMSE)))
+  cat(sprintf("  Best tune: nrounds=%s, max_depth=%s, eta=%.3f\n\n",
+              xgb_fit$bestTune$nrounds, xgb_fit$bestTune$max_depth, xgb_fit$bestTune$eta))
+
+  xgb_out[[paste0("h",h)]] <- list(
+    h = h,
+    best = xgb_fit$bestTune,
+    cv_rmse = min(xgb_fit$results$RMSE)
+  )
+}
+
+# summary table
+xgb_summary <- do.call(rbind, lapply(xgb_out, function(z) {
+  if (is.null(z)) return(NULL)
+  data.frame(
+    h = z$h,
+    nrounds = z$best$nrounds,
+    max_depth = z$best$max_depth,
+    eta = z$best$eta,
+    gamma = z$best$gamma,
+    colsample_bytree = z$best$colsample_bytree,
+    min_child_weight = z$best$min_child_weight,
+    subsample = z$best$subsample,
+    cv_rmse = z$cv_rmse
+  )
+}))
+print(xgb_summary)
+```
 
 ```{r}
 model <- function(df, h) {
