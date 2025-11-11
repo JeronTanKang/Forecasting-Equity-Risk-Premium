@@ -1,0 +1,535 @@
+---
+title: "forecast_evaluation"
+author: "Jeron Tan"
+date: "2025-10-25"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(rpart)
+library(glmnet)
+library(pls)
+library(tidyr)
+library(openxlsx)
+library(hdm)
+library(readxl)
+```
+
+
+THIINGS TO DO BEFORE USING THIS FILE 
+1. make sure full_df.csv, IEF_bond_adj_close.xlsx, simple_avg_predictions.xlsx is in ../data/ 
+2. choose a forecast horizon in {1,3,6,12} in the code chunk directly below this
+
+
+```{r}
+h = 12
+
+df = read.csv("../data/full_df.csv") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
+
+pred_raw = read_excel("../data/simple_avg_predictions.xlsx") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
+
+predictions_df <- switch(as.character(h),
+  "1"  = pred_raw %>% select(date, pred = h1),
+  "3"  = pred_raw %>% select(date, pred = h3),
+  "6"  = pred_raw %>% select(date, pred = h6),
+  "12" = pred_raw %>% select(date, pred = h12),
+  stop("h must be 1, 3, 6, or 12")
+)
+predictions_df
+```
+
+
+```{r}
+predictions <- predictions_df$pred
+
+
+Y_h1_actual <- head(tail(lead(df$erp, 1), 100+1), 100) #these erp values are for calculating residual/comparing on plots
+Y_h1_predicted <- predictions
+
+
+ss_residuals <- sum((Y_h1_actual - Y_h1_predicted)^2)  # Residual sum of squares
+ss_total <- sum((Y_h1_actual - mean(Y_h1_actual))^2)  # Total sum of squares
+r_squared <- 1 - (ss_residuals / ss_total)  # R^2 formula
+
+rmse <- sqrt(mean((Y_h1_actual - Y_h1_predicted)^2))  
+
+r_squared
+rmse
+```
+
+
+model forecast mean and sd over train val period (100 samples)
+these values below are based on values we recorded when running the models individually
+these individual values can be found in ../data/simple_avg_train_val_mean_sd.xlsx
+
+```{r}
+train_val_model_mean_pred <- switch(as.character(h),
+  "1"  = 0.005460494,
+  "3"  = 0.006075432,
+  "6"  = 0.005758449, 
+  "12" = 0.005496637, 
+  stop("h must be 1, 3, 6, or 12")
+)
+
+train_val_model_sd_pred <- switch(as.character(h),
+  "1"  = 0.012516674, 
+  "3"  = 0.01335582, 
+  "6"  = 0.011656582, 
+  "12" = 0.011923194, 
+  stop("h must be 1, 3, 6, or 12")
+)
+```
+
+
+```{r}
+train_val_model_mean_pred
+```
+
+```{r}
+train_val_model_sd_pred
+```
+
+```{r}
+1/train_val_model_sd_pred
+```
+
+
+
+```{r}
+sp_ret_series <- df$ret[229:nrow(df)]
+Rfree_series <- df$Rfree[229:nrow(df)]
+
+IEF_df <- read_excel("../data/IEF_bond_adj_close.xlsx")
+
+bond_level_series <- IEF_df$adj_close
+
+# simple returns: (P_t / P_{t-1}) - 1
+bond_ret_series <- bond_level_series[-1] / bond_level_series[-length(bond_level_series)] - 1
+
+```
+
+
+plot returns of sp500 and bond
+```{r}
+plot_sp_ret <- df %>%
+  slice(229:n()) %>%
+  select(date, ret) %>%
+  mutate(cum_ret_pct = (cumprod(1 + ret) - 1) * 100)
+
+ggplot(plot_sp_ret, aes(x = date, y = cum_ret_pct)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "S&P cumulative return (%)", x = NULL, y = "Cumulative return (%)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# IEF cumulative return
+plot_ief_ret <- IEF_df %>%
+  mutate(bond_ret_series = adj_close / lag(adj_close) - 1) %>%
+  slice(-1) %>%
+  select(date, bond_ret_series) %>%
+  mutate(cum_ret_pct = (cumprod(1 + bond_ret_series) - 1) * 100)
+
+ggplot(plot_ief_ret, aes(x = date, y = cum_ret_pct)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "IEF cumulative return (%)", x = NULL, y = "Cumulative return (%)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+both_long <- plot_sp_ret %>%
+  select(date, `S&P` = cum_ret_pct) %>%
+  inner_join(plot_ief_ret %>% select(date, IEF = cum_ret_pct), by = "date") %>%
+  pivot_longer(c(`S&P`, IEF), names_to = "series", values_to = "cum_ret_pct")
+
+ggplot(both_long, aes(x = date, y = cum_ret_pct, color = series)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "", x = NULL, y = "") +
+  theme(plot.title = element_text(hjust = 0.5), legend.title = element_blank())
+
+ret_join <- plot_sp_ret %>%
+  select(date, sp_ret = ret) %>%
+  inner_join(plot_ief_ret %>% select(date, ief_ret = bond_ret_series), by = "date")
+
+perf_summary <- ret_join %>%
+  pivot_longer(c(sp_ret, ief_ret), names_to = "series", values_to = "ret") %>%
+  group_by(series) %>%
+  summarise(
+    n = sum(!is.na(ret)),
+    annualized_return_pct = round((prod(1 + ret, na.rm = TRUE)^(12 / n) - 1) * 100,3),
+    annualized_vol_pct    = round(sd(ret, na.rm = TRUE) * sqrt(12) * 100,3),
+    .groups = "drop"
+  )
+
+perf_summary
+```
+
+
+
+
+```{r}
+bond_ret_series
+```
+
+
+```{r}
+length(sp_ret_series)
+```
+
+```{r}
+mean(sp_ret_series)*100
+```
+
+
+```{r}
+mean(bond_ret_series)*100
+```
+
+
+benchmark portfolio is 60/40 ret to Rfree
+
+calculate % return and sharpe of benchmark over test period
+
+```{r}
+n <- min(length(sp_ret_series), length(bond_ret_series))
+n
+```
+
+60/40 portfolio
+```{r}
+# 1. period-by-period 60/40 portfolio returns
+port_ret_series <- 0.6 * sp_ret_series + 0.4 * bond_ret_series
+
+n_months <- length(port_ret_series)
+
+# 2. cumulative return of the 60/40 across the full horizon
+cum_return_6040 <- prod(1 + port_ret_series) - 1
+
+# 3. average monthly return (simple mean)
+avg_monthly_6040 <- mean(port_ret_series)
+
+gross_total <- prod(1 + port_ret_series)
+avg_annual_geom_6040 <- gross_total^(12 / n_months) - 1
+
+```
+
+V1 heuristic
+market timing portfolio
+
+```{r}
+#predictions
+```
+
+STRATEGY 1: scaling_factor <- 1/train_val_model_sd_pred
+
+```{r}
+pred_num <- predictions
+
+# 1. signal relative to threshold
+signal <- pred_num - train_val_model_mean_pred
+
+# 2. raw equity weight
+scaling_factor <- 1/train_val_model_sd_pred
+raw_weight_sp <- 0.6 + scaling_factor * signal
+
+#print(raw_weight_sp)
+
+# 3. clip weights to avoid insane allocations
+max_deviation <- 0.2
+weight_sp   <- pmin(pmax(raw_weight_sp, 0.6-max_deviation), 0.6+max_deviation)
+weight_bond <- 1 - weight_sp
+
+# optional sanity check
+# head(cbind(
+#   date = predictions$date,
+#   pred = pred_num,
+#   weight_sp = weight_sp,
+#   weight_bond = weight_bond
+# ))
+
+# 4. timed portfolio return each month
+port_ret_timed <- weight_sp * sp_ret_series + weight_bond * bond_ret_series
+
+# 5. performance stats
+
+# cumulative total return over sample
+cum_return_timed <- prod(1 + port_ret_timed) - 1
+
+# average monthly return
+avg_monthly_timed <- mean(port_ret_timed)
+
+# geometric annualized return (CAGR style)
+n_months_timed <- length(port_ret_timed)
+gross_total_timed <- prod(1 + port_ret_timed)
+avg_annual_geom_timed <- gross_total_timed^(12 / n_months_timed) - 1
+
+# 6. constant 60/40 benchmark on the same window
+const6040 <- 0.6 * sp_ret_series + 0.4 * bond_ret_series
+cum_return_const <- prod(1 + const6040) - 1
+gross_total_const <- prod(1 + const6040)
+avg_annual_geom_const <- gross_total_const^(12 / n_months_timed) - 1
+
+```
+
+
+
+7. portfolio return overview
+
+```{r}
+max_drawdown <- function(ret_vec) {
+  # ret_vec: vector of monthly returns, e.g. 0.01 = 1%
+  
+  # cum wealth path starting at 1
+  wealth <- cumprod(1 + ret_vec)
+  
+  # running peak
+  running_peak <- cummax(wealth)
+  
+  # drawdown series in decimal terms
+  dd <- 1 - (wealth / running_peak)
+  
+  # max drawdown over full period
+  max(dd, na.rm = TRUE)
+}
+
+# Excess returns
+excess_ret_timed   <- port_ret_timed - Rfree_series
+excess_return_const <- const6040      - Rfree_series
+
+# Monthly Sharpe
+sharpe_m_timed <- mean(excess_ret_timed, na.rm = TRUE) / sd(excess_ret_timed, na.rm = TRUE)
+sharpe_m_const <- mean(excess_return_const, na.rm = TRUE) / sd(excess_return_const, na.rm = TRUE)
+
+# Annualized Sharpe (monthly → √12)
+sharpe_a_timed <- sharpe_m_timed * sqrt(12)
+sharpe_a_const <- sharpe_m_const * sqrt(12)
+
+mdd_timed <- max_drawdown(port_ret_timed)
+mdd_const <- max_drawdown(const6040)
+
+hit_vec   <- (port_ret_timed > const6040)
+hit_rate_timed <- mean(hit_vec, na.rm = TRUE)
+hit_rate_const <- NA_real_
+
+perf_tbl <- data.frame(
+  portfolio_strat1 = c("market_timing", "const_60_40"),
+  ann_sharpe       = c(sharpe_a_timed, sharpe_a_const),
+  ann_return       = c(avg_annual_geom_timed, avg_annual_geom_const),
+  max_drawdown     = c(mdd_timed, mdd_const),
+  hit_rate         = c(hit_rate_timed, hit_rate_const),
+  sharpe_monthly   = c(sharpe_m_timed, sharpe_m_const),
+  cum_return       = c(cum_return_timed, cum_return_const)
+)
+
+perf_tbl_2dp <- perf_tbl %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+perf_tbl_2dp
+```
+
+
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+
+plot_df <- data.frame(
+  date              = predictions_df$date,        
+  const6040_ret     = const6040*100,                    # constant portfolio monthly return
+  timed_ret         = port_ret_timed*100,               # timing portfolio monthly return
+  model_pred        = pred_num*100                      # predicted ERP(t+1)
+)
+
+# check alignment lengths
+stopifnot(
+  length(plot_df$const6040_ret) == length(plot_df$timed_ret),
+  length(plot_df$timed_ret)     == length(plot_df$model_pred)
+)
+
+# scale model_pred so it can share the same panel
+# pick a linear scaling so both lines are visible
+scale_factor <- (sd(plot_df$timed_ret, na.rm = TRUE) / sd(plot_df$model_pred, na.rm = TRUE))
+# plot_df <- plot_df %>%
+#   mutate(model_pred_scaled = model_pred )
+
+# long format for the two return series
+plot_df_long <- plot_df %>%
+  select(date, const6040_ret, timed_ret, model_pred) %>%
+  pivot_longer(
+    cols = c(const6040_ret, timed_ret),
+    names_to = "series",
+    values_to = "ret"
+  )
+
+# plot
+ggplot() +
+  # constant 60/40 and timed strategy returns
+  geom_line(
+    data = plot_df_long,
+    aes(x = date, y = ret, color = series),
+    linewidth = 1,
+    alpha = 0.6
+  ) +
+  # model prediction on secondary axis (scaled)
+  geom_line(
+    data = plot_df,
+    aes(x = date, y = model_pred),
+    linewidth = 0.5 ,
+    linetype = "twodash"
+  ) +
+  scale_color_manual(
+    values = c("const6040_ret" = "blue",
+               "timed_ret"     = "red",
+               "model_pred" = "black"),  # Color for the dashed line
+    labels = c("const6040_ret" = "60/40 Monthly Return",
+               "timed_ret"     = "Market Timing Monthly Return",
+               "model_pred" = "Forecasted Equity Risk Premium")  # Add label for the dashed line
+  ) +
+  scale_y_continuous(
+    name = "Monthly Portfolio Return (%)",  # Left Y-axis label
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "Forecasted Equity Risk Premium (%)",  # Right Y-axis label 
+    )
+  ) +
+  labs(
+    x = "",
+    color = NULL,
+    title = "Monthly Returns of Market Timing vs Benchmark Portfolio with ERP Forecast"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = c(0.1, 0.1)
+  )
+
+# 1. build cumulative return series
+plot_df_cum <- data.frame(
+  date              = predictions_df$date,
+  const6040_ret     = const6040,
+  timed_ret         = port_ret_timed,
+  model_pred        = pred_num *100
+)
+
+plot_df_cum <- plot_df_cum %>%
+  mutate(
+    cum_const6040 = (cumprod(1 + const6040_ret) - 1)*100,
+    cum_timed     = (cumprod(1 + timed_ret)     - 1)*100
+  )
+
+# 2. sanity check length match
+stopifnot(
+  length(plot_df_cum$cum_const6040) == length(plot_df_cum$cum_timed),
+  length(plot_df_cum$cum_timed)     == length(plot_df_cum$model_pred)
+)
+
+# 3. rescale model_pred to overlay on same panel
+scale_factor_cum <- (sd(plot_df_cum$cum_timed, na.rm = TRUE) /
+                    sd(plot_df_cum$model_pred, na.rm = TRUE)) /3
+
+plot_df_cum <- plot_df_cum %>%
+  mutate(model_pred_scaled = model_pred * scale_factor_cum)
+
+# 4. long format for cumulative returns
+plot_df_cum_long <- plot_df_cum %>%
+  select(date, cum_const6040, cum_timed) %>%
+  pivot_longer(
+    cols = c(cum_const6040, cum_timed),
+    names_to = "series",
+    values_to = "cum_ret"
+  )
+
+# 5. plot cumulative performance vs forecast signal
+ggplot() +
+  # cumulative returns for constant 60/40 and timed strategy
+  geom_line(
+    data = plot_df_cum_long,
+    aes(x = date, y = cum_ret, color = series),
+    linewidth = 1
+  ) +
+  # forecast signal on secondary axis
+  geom_line(
+    data = plot_df_cum,
+    aes(x = date, y = model_pred_scaled, color = "Forecasted Equity Risk Premium"), # Dummy mapping for legend
+    linewidth = 0.5,
+    linetype = "twodash",
+    show.legend = TRUE
+  ) +
+  scale_color_manual(
+    values = c("cum_const6040" = "blue", 
+               "cum_timed" = "red", 
+               "Forecasted Equity Risk Premium" = "black"),  # Forecast signal color
+    labels = c("cum_const6040" = "60/40 Cumulative Return", 
+               "cum_timed" = "Market Timing Cumulative Return", 
+               "Forecasted Equity Risk Premium" = "Forecasted Equity Risk Premium")  # Add label for forecast signal
+  ) +
+  scale_y_continuous(
+    name = "Cumulative Return (%)",
+    sec.axis = sec_axis(
+      ~ . / scale_factor_cum,
+      name = "Forecasted Equity Risk Premium (%)"
+    )
+  ) +
+  labs(
+    x = "",
+    color = NULL,
+    title = "Cumulative Returns of Market Timing vs Benchmark Portfolio with ERP Forecast"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = c(0.2, 0.9)
+  )
+
+weight_df <- data.frame(
+  date = predictions_df$date,
+  weight_sp = weight_sp*100
+)
+
+ggplot(weight_df, aes(x = date, y = weight_sp)) +
+  geom_line(linewidth = 0.6, color = "black") +
+  geom_hline(yintercept = 60, linetype = "dashed") +
+  labs(
+    title = "S&P500 Allocation Over Test Period (%), mean = 61%",
+    x = "",
+    y = ""
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = c(0.9, 0.9)
+    )+
+  ylim(40, 80)
+```
+
+
+average sp500 weight (relative to fixed 60)
+
+```{r}
+mean(weight_sp)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
