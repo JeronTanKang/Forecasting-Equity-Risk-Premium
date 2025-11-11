@@ -5,7 +5,7 @@ library(zoo)
 library(lubridate)
 
 # 1) Load your data (set the correct path)
-df <- read_csv('/Users/kellianneng/Downloads/Telegram Desktop/SP500_monthly_MS_from_daily.csv') 
+df <- read_csv("../data/SP500_monthly_MS_from_daily.csv") 
 
 # Sort the data 
 df <- df %>%
