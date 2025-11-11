@@ -1,0 +1,1135 @@
+---
+title: "forecast_evaluation"
+author: "Jeron Tan"
+date: "2025-10-25"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(rpart)
+library(glmnet)
+library(pls)
+library(tidyr)
+library(openxlsx)
+library(hdm)
+```
+
+
+THIINGS TO DO BEFORE USING THIS FILE 
+1. make sure full_df.csv and  IEF_bond_adj_close.xlsx is in ../data/ 
+2. choose a forecast horizon in {1,3,6,12} in the code chunk directly below this
+
+```{r}
+h = 3
+
+## choose one of the models below
+
+# model_name <- 'lasso_v1' # lasso_linear
+# model_name <- 'lasso_v2' # lasso_non_linear
+# model_name <- 'pls'
+# model_name <- 'ridgeless'
+# model_name <- 'ridge'
+# model_name <- 'elastic_net'
+# model_name <- 'random_forest'
+# model_name <- 'xgboost'
+ 
+```
+
+```{r}
+lasso_v1 <- function(df, h){
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = lead(erp, n = h)) %>% select(date, target, everything()) %>% drop_na()
+  df_train = df_std %>% slice(1:(n() - h))
+  #run lasso to find out which indicators are not shrunk to 0
+  y = df_std %>% select(target)
+  
+  #predictors
+  x = df_std %>% select(-target, -date)
+  
+  #lasso
+  lasso_model <- rlasso(x, y, post= FALSE)
+  lasso_coeffs <- coef(lasso_model)
+  
+  # Convert to a data frame
+  coeff_df <- data.frame(variable = names(lasso_coeffs), coefficient = as.numeric(lasso_coeffs))
+  
+  # Get the names of selected variables
+  selected_vars <- coeff_df %>%
+    filter(coefficient != 0, variable != "(Intercept)")
+  
+     df_forecast = df_std %>% slice(n()-h+1)
+  
+    #1 step forecast
+    pred <- predict(lasso_model, newdata = df_forecast)
+    return(pred)
+    
+  }
+
+lasso_v2 <- function(df, h){
+  df_squared <- df %>%
+    mutate(across(
+      .cols = -date,
+      .fns = ~ .x^2,
+      .names = "{.col}_sq"
+    ))
+  
+  #want to include interactions of all contemp terms
+  cols_interact <- c(
+    "erp_lag1", "ret_lag1", "Rfree_lag1", "d12_lag1", "lty_lag1", "d_p_lag1", "tms_lag1", "dfy_lag1",
+     "svar_lag1", "b_m_lag1", "ltr_lag1", "corpr_lag1", "lzrt_lag1", "wtexas_lag1",
+     "avgcor_lag1", "skvw_lag1", "tail_lag1", "rdsp_lag1", "ntis_lag1", "ygap_lag1",
+    "rsvix_lag1", "vrp_lag1", "impvar_lag1", "Volume_lag1", 'e12_lag1', 'e_p_lag1', 'ndrbl_lag1', 'd_e_lag1', 'infl_lag1')
+  
+  #combn gives combinations so wont repeat the pairs
+  combinations_matrix <- combn(cols_interact, 2)
+  
+  #for loop to create interaction terms
+  for (i in 1:ncol(combinations_matrix)) {
+  
+    #names for this pair ( example - "erp" and "ret")
+    col_1 <- combinations_matrix[1, i]
+    col_2 <- combinations_matrix[2, i]
+  
+    #col name
+    new_col_name <- paste(col_1, col_2, sep = "_x_") #e.g erp_x_ret
+  
+  
+    df_squared[[new_col_name]] <- df_squared[[col_1]] * df_squared[[col_2]]
+  }
+  
+  df_std = df_squared %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = lead(erp, n = h)) %>% select(date, target, everything())
+  df_train = df_std %>% slice(1:(n() - h))
+
+   #run lasso to find out which indicators are not shrunk to 0
+   y = df_train %>% select(target)
+
+  #predictors
+  x = df_train %>% select(-target, -date)
+
+  #lasso
+  lasso_model <- rlasso(x, y, post= FALSE)
+  lasso_coeffs <- coef(lasso_model)
+
+  # Convert to a data frame
+  coeff_df <- data.frame(variable = names(lasso_coeffs), coefficient = as.numeric(lasso_coeffs))
+
+  # Remove intercept and filter non-zero coefficients
+  selected_vars <- coeff_df %>%
+    filter(coefficient != 0, variable != "(Intercept)") %>% mutate(Importance = abs(coefficient)) %>%
+    arrange(desc(Importance)) %>% select(variable) %>% pull(variable) %>% as.character()
+
+
+   df_forecast = df_std %>% slice(n()-h+1)
+
+  #1 step forecast
+  pred <- predict(lasso_model, newdata = df_forecast)
+  return(pred)
+}
+
+pls <- function(df, h) {
+  # df: all data available up to "now"
+  # h: forecast horizon in months ahead. allowed: 1,3,6,12
+  # RETURNS: scalar forecast of ERP(t+h)
+  
+  # 0. choose which RDS to load based on h
+  struct_path <- switch(
+    as.character(h),
+    "1"  = "../code/pls_structure_h1.rds",
+    "3"  = "../code/pls_structure_h3.rds",
+    "6"  = "../code/pls_structure_h6.rds",
+    "12" = "../code/pls_structure_h12.rds",
+    stop("Unsupported horizon h. Use 1,3,6,12.")
+  )
+  
+  pls_structure <- readRDS(struct_path)
+  
+  # 1. unpack horizon-specific fields
+  #    each RDS has different naming for the number of comps:
+  #    h1_comp, h3_comp, h6_comp, h12_comp
+  n_comp <- switch(
+    as.character(h),
+    "1"  = pls_structure$h1_comp,
+    "3"  = pls_structure$h3_comp,
+    "6"  = pls_structure$h6_comp,
+    "12" = pls_structure$h12_comp
+  )
+  
+  predictor_cols <- pls_structure$predictor_cols
+  X_means        <- pls_structure$X_means
+  X_sds          <- pls_structure$X_sds
+  W_full         <- pls_structure$W_full   # [num_predictors x n_comp]
+  
+  # helper for standardization using frozen training stats
+  standardize_like_training <- function(X_raw, means_vec, sds_vec) {
+    X_mat       <- as.matrix(X_raw)
+    X_centered  <- sweep(X_mat, 2, means_vec[colnames(X_raw)], FUN = "-")
+    X_std       <- sweep(X_centered, 2, sds_vec[colnames(X_raw)], FUN = "/")
+    X_std
+  }
+  
+  # (1) sort chronologically and build Y = ERP_{t+h}
+  df_sorted <- df %>%
+    mutate(date = as.Date(date)) %>%
+    arrange(date) %>%
+    mutate(Y = dplyr::lead(erp, h))
+  
+  # (2) drop final NA Y (no realized ERP(t+h) yet)
+  df_in <- df_sorted %>%
+    filter(!is.na(Y))
+  
+  # must have at least 2 rows:
+  # - rows 1:(n-1) to estimate beta
+  # - row n to forecast
+  if (nrow(df_in) < 2) {
+    return(NA_real_)
+  }
+  
+  # pull predictors in locked order
+  X_all_raw <- df_in[, predictor_cols, drop = FALSE]
+  
+  # standardize with TRAINING stats (frozen means/sds)
+  X_all_std <- standardize_like_training(
+    X_raw     = X_all_raw,
+    means_vec = X_means,
+    sds_vec   = X_sds
+  )
+  
+  # Scores_all: [rows x n_comp]
+  Scores_all <- X_all_std %*% W_full
+  
+  # (3) expanding-window regression of Y on the component scores
+  Y_all    <- df_in$Y
+  last_idx <- nrow(df_in)
+  
+  Scores_train   <- Scores_all[1:(last_idx - 1), , drop = FALSE]
+  Y_train        <- Y_all[1:(last_idx - 1)]
+  Score_forecast <- Scores_all[last_idx, , drop = FALSE]
+  
+  # build regression frame
+  scores_df <- as.data.frame(Scores_train)
+  colnames(scores_df) <- paste0("T", seq_len(n_comp))
+  
+  reg_df <- data.frame(
+    Y = Y_train,
+    scores_df
+  )
+  
+  fit_beta <- lm(
+    formula = as.formula(
+      paste("Y ~", paste(colnames(scores_df), collapse = " + "))
+    ),
+    data = reg_df
+  )
+  
+  last_scores <- as.data.frame(Score_forecast)
+  colnames(last_scores) <- paste0("T", seq_len(n_comp))
+  
+  pred_next <- predict(fit_beta, newdata = last_scores)
+  
+  as.numeric(pred_next)
+}
+
+
+build_rff_features <- function(X, num_features, gamma, seed) {
+  stopifnot(num_features %% 2 == 0)
+  set.seed(seed)
+
+  half   <- num_features / 2L
+  D      <- ncol(X)
+
+  # random projection matrix ~ N(0,1)
+  omegas <- matrix(rnorm(half * D), nrow = half, ncol = D)
+
+  # linear projections of X
+  proj   <- X %*% t(omegas)
+
+  # allocate [sin, cos, sin, cos, ...]
+  S      <- matrix(NA_real_, nrow = nrow(X), ncol = num_features)
+  S[, seq(1, num_features, 2)] <- sin(gamma * proj)
+  S[, seq(2, num_features, 2)] <- cos(gamma * proj)
+
+  list(S = S, omegas = omegas, gamma = gamma)
+}
+
+## helper function to transform forecast predictors to the exact same RFF space 
+transform_rff_features <- function(X_new, omegas, gamma) {
+  half <- nrow(omegas)
+  P    <- 2L * half
+
+  proj <- X_new %*% t(omegas)
+
+  S    <- matrix(NA_real_, nrow = nrow(X_new), ncol = P)
+  S[, seq(1, P, 2)] <- sin(gamma * proj)
+  S[, seq(2, P, 2)] <- cos(gamma * proj)
+
+  S
+}
+
+## final forecasting model with optimal params 
+ridgeless <- function(df, h) {
+  # 1. tuned hyper params
+  params <- switch(as.character(h),
+    "1"  = list(P=2000L, z=0.1,  gamma=0.2),
+    "3"  = list(P=2000L, z=0.0,  gamma=1.0),
+    "6"  = list(P=2000L, z=0.1,  gamma=2.0),
+    "12" = list(P=2000L, z=0.1, gamma=1.0),
+    NULL
+  )
+  if (is.null(params)) stop("h must be one of 1, 3, 6, 12")
+
+  P_tuned     <- params$P
+  z_tuned     <- params$z
+  gamma_tuned <- params$gamma
+  seed_val    <- 1L
+
+  # 2. arrange and create target
+  df <- df %>%
+    arrange(date) %>%
+    mutate(target = lead(erp, n = h))
+
+  df_train <- df %>%
+    slice(1:(n() - h)) %>%
+    drop_na(target)
+
+  df_forecast <- df %>%
+    slice(n() - h + 1)
+
+  # 3. build df for training
+  # use all col other than date and target as features
+  feature_cols <- setdiff(names(df_train), c("date", "target"))
+  y_train      <- df_train$target
+  X_train      <- df_train[, feature_cols, drop = FALSE]
+
+  # 4. standardize train predictors
+  mu  <- colMeans(X_train, na.rm = TRUE)
+  sdv <- apply(X_train, 2, sd, na.rm = TRUE)
+  sdv[sdv == 0 | is.na(sdv)] <- 1  # avoid dividing by zero but shouldnt need this
+
+  X_train_std <- scale(X_train, center = mu, scale = sdv)
+  X_train_std <- as.matrix(X_train_std)
+
+  # standardize the forecast row with same mu and sd
+  X_fore <- df_forecast[, feature_cols, drop = FALSE]
+  X_fore_std <- sweep(X_fore, 2, mu, "-")
+  X_fore_std <- sweep(X_fore_std, 2, sdv, "/")
+  X_fore_std <- as.matrix(X_fore_std)
+
+  # 5. Random Fourier Features using tuned P and gamma
+  rff_obj    <- build_rff_features(
+    X = X_train_std,
+    num_features = P_tuned,
+    gamma = gamma_tuned,
+    seed  = seed_val
+  )
+  S_train <- rff_obj$S
+  omegas  <- rff_obj$omegas
+
+  # map forecast row to same feature space
+  S_fore <- transform_rff_features(X_fore_std, omegas, gamma_tuned)
+
+  # 6. fit coefficients using tuned z
+  # svd if penalty is 0
+  if (z_tuned == 0) {
+    # ridgeless using SVD pseudoinverse
+    svd_decomp <- svd(S_train)
+    tol <- 1e-10
+    Dplus <- diag(ifelse(svd_decomp$d > tol, 1 / svd_decomp$d, 0))
+    beta_hat <- svd_decomp$v %*% Dplus %*% t(svd_decomp$u) %*% y_train
+  } else {
+    # ridge closed form if z is non zero
+    I <- diag(ncol(S_train))
+    beta_hat <- solve(t(S_train) %*% S_train + z_tuned * I) %*%
+                (t(S_train) %*% y_train)
+  }
+
+  # 7. compute forecast
+  y_pred <- as.numeric(S_fore %*% beta_hat)
+
+  return(y_pred)
+}
+
+elastic_net <- function(df, h){
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = lead(erp, n = h)) %>% select(date, target, everything())
+  df_train = df_std %>% slice(1:(n() - h))
+  
+  if (h == 1) {
+    alpha_star  <- 0.70   
+    lambda_star <- 0.01
+  } else if (h == 3) {
+    alpha_star  <- 0.00 
+    lambda_star <- 0.497702
+  } else if (h == 6) {
+    alpha_star  <- 0.0305386
+    lambda_star <- 0.3
+  } else if (h == 12) {
+    alpha_star  <- 0.10
+    lambda_star <- 0.0403702
+  } 
+
+  y = df_train %>% pull(target)  # Use pull() to get a vector
+  x = df_train %>% select(-target, -date) %>% as.matrix()  # Convert to matrix
+
+  elnet <- glmnet(
+    x = x,
+    y = y,
+    alpha = alpha_star,
+    lambda = lambda_star,
+    standardize = FALSE
+  )
+
+  df_forecast = df_std %>% slice(n()-h+1) %>% select(all_of(colnames(x))) %>% as.matrix()
+
+  pred <- predict(elnet, newx = df_forecast, s = lambda_star)
+
+  return(pred)
+}
+
+ridge <- function(df, h){
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = lead(erp, n = h)) %>% select(date, target, everything())
+  df_train = df_std %>% slice(1:(n() - h))
+  
+  if (h == 1){
+    pi_lambda <- 0.376494
+  }
+  else if (h == 3){
+    pi_lambda <- 0.497702
+  }
+  else if (h == 6){
+    pi_lambda <- 100000
+  }
+  else if (h ==12){
+    pi_lambda <- 6.13591
+  }
+    
+  y = df_train %>% pull(target)  # Use pull() to get a vector to use as Y in glmnet()
+
+  x = df_train %>% select(-target, -date) %>% as.matrix()  # X must be matrix in glmnet
+
+  ridge_model <- glmnet(x, y, alpha = 0, lambda = pi_lambda, standardize = FALSE)
+
+  # Forecast data (the row h steps from the end)
+  df_forecast = df_std %>% slice(n()-h+1) %>% select(-date, -target) %>% as.matrix()
+
+  pred <- predict(ridge_model, newx = df_forecast, s = pi_lambda)
+
+  return(pred)
+}
+
+```
+
+
+
+
+```{r}
+df = read.csv("../data/full_df.csv") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
+```
+
+dynamic model assignment based on what model the user selected
+```{r}
+.ALLOWED_MODELS <- c(
+  'lasso_v1','lasso_v2','pls','ridgeless','ridge',
+  'elastic_net','random_forest','xgboost','tree'
+)
+
+# Lookup the function by name, fail cleanly if missing
+.get_model_fn <- function(name = model_name) {
+  if (!name %in% .ALLOWED_MODELS) {
+    stop(sprintf("model_name must be one of: %s",
+                 paste(.ALLOWED_MODELS, collapse = ", ")),
+         call. = FALSE)
+  }
+  fn <- get0(name, mode = "function", inherits = TRUE)
+  if (is.null(fn)) {
+    stop(sprintf("Function '%s' is not defined. Define it before calling model().", name),
+         call. = FALSE)
+  }
+  fn
+}
+
+# Public wrapper: forwards all args to the chosen model function
+model <- function(...) {
+  fn <- .get_model_fn()
+  fn(...)
+}
+
+```
+
+```{r}
+EVALUATION_SAMPLE_SIZE = 100 
+# the fixed rolling window size is 229
+# the first fixed rolling window is [1,228] the last is [99,327]
+
+run_recursive_window <- function(df, model_name) {
+  
+  date_col <- tail(df[[1]], EVALUATION_SAMPLE_SIZE) 
+  #print(date_col) # to check forecast dates this should never change starts 5/2015 and ends 8/2023
+  T_total <- nrow(df)
+  
+  # 1. create variable for TRUE ERP
+  #Y_h1 <- head(tail(lead(df$erp, 1), 101),100)
+  Y_h1 <- tail(df$erp,100)
+  
+  # 2. preallocate prediction table
+  preds_df <- data.frame(
+    date = date_col,                 
+    model_name = rep(NA_real_, EVALUATION_SAMPLE_SIZE)
+  )
+  
+  # 3. fixed size windows
+  for (t in seq(T_total - EVALUATION_SAMPLE_SIZE + 1, T_total)) { # t goes from 229 to 328
+    trim_index <- t - 1
+    test_index <- t - (T_total - EVALUATION_SAMPLE_SIZE+1) # test_index counts up till 99
+    df_trimmed <- df[0+test_index:trim_index, , drop = FALSE]
+  
+    # Store predictions
+    preds_df$model_name[test_index + 1] <- model(df_trimmed,h)
+    
+    ##uncomment this to ensure prediction starts on 5/2015
+    # if (test_index == 0) {
+    #   print(t)
+    #   print(df_trimmed)
+    #   print(preds_df)
+    # }
+  }
+  
+  # 4. calculate residuals dynamically
+  residual_col_name <- paste0(model_name, "_residual")  # Dynamic column name for residuals
+  
+  residuals_df <- data.frame(
+    date = date_col,
+    residual_col_name = preds_df$model_name - Y_h1  # Dynamic residuals calculation
+  )
+  
+  
+  #print(preds_df)
+
+  return(list(
+    preds_df = preds_df,
+    residuals_df = residuals_df
+  ))
+}
+
+forecast_eval <- function(df, model_name) {
+  
+  # 1. generate predictions and calculate residuals
+  out <- run_recursive_window(df, model_name)
+  preds_df <- out$preds_df
+  residuals_df <- out$residuals_df
+  
+  # 2. Calculate R^2 (Coefficient of Determination)
+  Y_h1_actual <- head(tail(lead(df$erp, 1), EVALUATION_SAMPLE_SIZE+1), EVALUATION_SAMPLE_SIZE) #these erp values are for calculating residual/comparing on plots
+  Y_h1_predicted <- head(preds_df$model_name, EVALUATION_SAMPLE_SIZE)
+  
+  
+  #print(Y_h1_actual)
+  #print(Y_h1_predicted)
+  
+  ss_residuals <- sum((Y_h1_actual - Y_h1_predicted)^2)  # Residual sum of squares
+  ss_total <- sum((Y_h1_actual - mean(Y_h1_actual))^2)  # Total sum of squares
+  r_squared <- 1 - (ss_residuals / ss_total)  # R^2 formula
+  
+  # 3. Calculate RMSE (Root Mean Squared Error)
+  rmse <- sqrt(mean((Y_h1_actual - Y_h1_predicted)^2))  # RMSE formula
+  
+  # 4. Plot the actual vs predicted values on a time series plot
+  plot_df <- data.frame(
+    date = tail(df$date, EVALUATION_SAMPLE_SIZE),  # Assuming the date column is the last column in 'df'
+    actual = Y_h1_actual*100,
+    predicted = Y_h1_predicted*100
+  )
+  
+  #print(plot_df)
+  
+  plot_out <- ggplot(plot_df, aes(x = date)) +
+    geom_line(aes(y = actual, color = "Actual"), size = 1) +
+    geom_line(aes(y = predicted, color = "Predicted"), size = 1) +
+    labs(
+      color = "Legend",
+      title = "Equity Risk Premium Forecast vs Actual (%)"
+    ) +
+    theme_minimal() +
+    scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red")) +
+    theme(
+      axis.title.x = element_blank(),  # Remove x-axis label
+      axis.title.y = element_blank(),  # Remove y-axis label
+      plot.title = element_text(hjust = 0.5),
+      legend.position = c(0.9, 0.9)
+    )
+  
+  return(list(
+    preds_df = preds_df,
+    residuals_df = residuals_df,
+    r_squared = r_squared,
+    rmse = rmse,
+    plot = plot_out
+  ))
+}
+```
+
+
+```{r}
+result <- forecast_eval(df, model_name = model_name)
+
+print(result$r_squared)
+print(result$rmse)
+#print(result$preds_df)
+#print(result$residuals_df)
+print(result$plot)
+```
+
+
+market timing algo
+
+```{r}
+for_dm_test <- result$residuals_df
+for_dm_test[[2]] <- -for_dm_test[[2]]
+resid_file <- sprintf("../data/%s_h%s_residuals.xlsx", model_name, h)
+write.xlsx(for_dm_test, resid_file, rowNames = FALSE)
+
+pred_file  <- sprintf("../data/%s_h%s_predictions.xlsx", model_name, h)
+write.xlsx(result$preds_df, pred_file, rowNames = FALSE)
+```
+
+
+```{r}
+predictions <- result$preds_df
+mean(predictions$model_name)
+```
+
+
+
+calculate prevailing mean over train-validation set
+```{r}
+n_trainval <- 228
+
+prev_mean <- mean(df$erp[1:n_trainval])
+
+prev_mean
+```
+
+
+```{r}
+#prevailing mean model forecast residual
+#prev_mean_residual <- head(tail(lead(df$erp, 1), 101),100) - prev_mean
+prev_mean_residual <- tail(df$erp,100) - prev_mean
+
+mean(prev_mean_residual^2)
+```
+
+```{r}
+mean(result$residuals_df$residual_col_name^2)
+
+```
+
+
+
+calculate model prevailing mean over train-validation set
+```{r}
+predict_model_on_train_val_set <- function(df) {
+  stopifnot(nrow(df) >= 227)
+
+
+  preds <- numeric(100)
+  ends  <- as.Date(rep(NA, 100))
+
+  for (i in 1:100) {
+    end_idx    <- 127 + i
+    df_trimmed <- df[i:end_idx, , drop = FALSE]   # note the comma
+    preds[i]   <- as.numeric(model(df_trimmed,h))
+    ends[i]    <- df$date[end_idx]                # keep as Date
+  }
+
+  data.frame(
+    date = ends,
+    pred = preds
+  )
+}
+
+pred_series <- predict_model_on_train_val_set(df)
+train_val_model_mean_pred <- mean(pred_series$pred, na.rm = TRUE)
+train_val_model_sd_pred  <- sd(pred_series$pred, na.rm = TRUE)
+
+pred_series %>%
+  arrange(date) %>%
+  ggplot(aes(x = date, y = pred)) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Predictions made by model over the train set", x = "Date", y = "pred") +
+  theme_minimal()
+```
+
+
+```{r}
+trainval_pred_file <- sprintf("../data/%s_h%s_trainval_predictions.xlsx", model_name, h)
+write.xlsx(pred_series, trainval_pred_file, rowNames = FALSE)
+```
+
+
+```{r}
+train_val_model_mean_pred
+```
+
+```{r}
+train_val_model_sd_pred
+```
+
+```{r}
+1/train_val_model_sd_pred
+```
+
+
+calculate model prevailing mean over test set
+```{r}
+model_prev_mean <- mean(predictions$model_name)
+model_prev_mean
+```
+
+
+
+```{r}
+library(readxl)
+
+sp_ret_series <- df$ret[229:nrow(df)]
+Rfree_series <- df$Rfree[229:nrow(df)]
+
+IEF_df <- read_excel("../data/IEF_bond_adj_close.xlsx")
+#IEF_df <- df$corpr[229:nrow(df)]
+
+bond_level_series <- IEF_df$adj_close
+#bond_level_series <- IEF_df
+
+# simple returns: (P_t / P_{t-1}) - 1
+bond_ret_series <- bond_level_series[-1] / bond_level_series[-length(bond_level_series)] - 1
+
+```
+
+IMPORTANT NOTE: temporarily drop the first row from sp_ret_series and bond_ret_series becos they both have 100 rows becos that start from may 2015
+but predictions starts from MAY 2015  
+
+
+plot returns of sp500 and bond
+```{r}
+plot_sp_ret <- df %>%
+  slice(229:n()) %>%
+  select(date, ret) %>%
+  mutate(cum_ret_pct = (cumprod(1 + ret) - 1) * 100)
+
+ggplot(plot_sp_ret, aes(x = date, y = cum_ret_pct)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "S&P cumulative return (%)", x = NULL, y = "Cumulative return (%)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# IEF cumulative return
+plot_ief_ret <- IEF_df %>%
+  mutate(bond_ret_series = adj_close / lag(adj_close) - 1) %>%
+  slice(-1) %>%
+  select(date, bond_ret_series) %>%
+  mutate(cum_ret_pct = (cumprod(1 + bond_ret_series) - 1) * 100)
+
+ggplot(plot_ief_ret, aes(x = date, y = cum_ret_pct)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "IEF cumulative return (%)", x = NULL, y = "Cumulative return (%)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+both_long <- plot_sp_ret %>%
+  select(date, `S&P` = cum_ret_pct) %>%
+  inner_join(plot_ief_ret %>% select(date, IEF = cum_ret_pct), by = "date") %>%
+  pivot_longer(c(`S&P`, IEF), names_to = "series", values_to = "cum_ret_pct")
+
+ggplot(both_long, aes(x = date, y = cum_ret_pct, color = series)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "", x = NULL, y = "") +
+  theme(plot.title = element_text(hjust = 0.5), legend.title = element_blank())
+
+ret_join <- plot_sp_ret %>%
+  select(date, sp_ret = ret) %>%
+  inner_join(plot_ief_ret %>% select(date, ief_ret = bond_ret_series), by = "date")
+
+perf_summary <- ret_join %>%
+  pivot_longer(c(sp_ret, ief_ret), names_to = "series", values_to = "ret") %>%
+  group_by(series) %>%
+  summarise(
+    n = sum(!is.na(ret)),
+    annualized_return_pct = round((prod(1 + ret, na.rm = TRUE)^(12 / n) - 1) * 100,3),
+    annualized_vol_pct    = round(sd(ret, na.rm = TRUE) * sqrt(12) * 100,3),
+    .groups = "drop"
+  )
+
+perf_summary
+```
+
+
+
+
+```{r}
+bond_ret_series
+```
+
+
+```{r}
+length(sp_ret_series)
+```
+
+```{r}
+mean(sp_ret_series)*100
+```
+
+
+```{r}
+mean(bond_ret_series)*100
+```
+
+
+benchmark portfolio is 60/40 ret to Rfree
+
+calculate % return and sharpe of benchmark over test period
+
+```{r}
+n <- min(length(sp_ret_series), length(bond_ret_series))
+n
+```
+
+60/40 portfolio
+```{r}
+# 1. period-by-period 60/40 portfolio returns
+port_ret_series <- 0.6 * sp_ret_series + 0.4 * bond_ret_series
+
+n_months <- length(port_ret_series)
+
+# 2. cumulative return of the 60/40 across the full horizon
+cum_return_6040 <- prod(1 + port_ret_series) - 1
+
+# 3. average monthly return (simple mean)
+avg_monthly_6040 <- mean(port_ret_series)
+
+gross_total <- prod(1 + port_ret_series)
+avg_annual_geom_6040 <- gross_total^(12 / n_months) - 1
+
+```
+
+V1 heuristic
+market timing portfolio
+
+```{r}
+#predictions
+```
+
+STRATEGY 1: scaling_factor <- 1/train_val_model_sd_pred
+
+```{r}
+pred_num <- predictions$model_name  # predicted ERP(t+1)
+
+# 1. signal relative to threshold
+signal <- pred_num - train_val_model_mean_pred
+
+# 2. raw equity weight
+scaling_factor <- 1/train_val_model_sd_pred
+raw_weight_sp <- 0.6 + scaling_factor * signal
+
+#print(raw_weight_sp)
+
+# 3. clip weights to avoid insane allocations
+max_deviation <- 0.2
+weight_sp   <- pmin(pmax(raw_weight_sp, 0.6-max_deviation), 0.6+max_deviation)
+weight_bond <- 1 - weight_sp
+
+# optional sanity check
+# head(cbind(
+#   date = predictions$date,
+#   pred = pred_num,
+#   weight_sp = weight_sp,
+#   weight_bond = weight_bond
+# ))
+
+# 4. timed portfolio return each month
+port_ret_timed <- weight_sp * sp_ret_series + weight_bond * bond_ret_series
+
+# 5. performance stats
+
+# cumulative total return over sample
+cum_return_timed <- prod(1 + port_ret_timed) - 1
+
+# average monthly return
+avg_monthly_timed <- mean(port_ret_timed)
+
+# geometric annualized return (CAGR style)
+n_months_timed <- length(port_ret_timed)
+gross_total_timed <- prod(1 + port_ret_timed)
+avg_annual_geom_timed <- gross_total_timed^(12 / n_months_timed) - 1
+
+# 6. constant 60/40 benchmark on the same window
+const6040 <- 0.6 * sp_ret_series + 0.4 * bond_ret_series
+cum_return_const <- prod(1 + const6040) - 1
+gross_total_const <- prod(1 + const6040)
+avg_annual_geom_const <- gross_total_const^(12 / n_months_timed) - 1
+
+```
+
+
+
+7. portfolio return overview
+
+```{r}
+max_drawdown <- function(ret_vec) {
+  # ret_vec: vector of monthly returns, e.g. 0.01 = 1%
+  
+  # cum wealth path starting at 1
+  wealth <- cumprod(1 + ret_vec)
+  
+  # running peak
+  running_peak <- cummax(wealth)
+  
+  # drawdown series in decimal terms
+  dd <- 1 - (wealth / running_peak)
+  
+  # max drawdown over full period
+  max(dd, na.rm = TRUE)
+}
+
+# Excess returns
+excess_ret_timed   <- port_ret_timed - Rfree_series
+excess_return_const <- const6040      - Rfree_series
+
+# Monthly Sharpe
+sharpe_m_timed <- mean(excess_ret_timed, na.rm = TRUE) / sd(excess_ret_timed, na.rm = TRUE)
+sharpe_m_const <- mean(excess_return_const, na.rm = TRUE) / sd(excess_return_const, na.rm = TRUE)
+
+# Annualized Sharpe (monthly → √12)
+sharpe_a_timed <- sharpe_m_timed * sqrt(12)
+sharpe_a_const <- sharpe_m_const * sqrt(12)
+
+mdd_timed <- max_drawdown(port_ret_timed)
+mdd_const <- max_drawdown(const6040)
+
+hit_vec   <- (port_ret_timed > const6040)
+hit_rate_timed <- mean(hit_vec, na.rm = TRUE)
+hit_rate_const <- NA_real_
+
+perf_tbl <- data.frame(
+  portfolio_strat1 = c("market_timing", "const_60_40"),
+  ann_sharpe       = c(sharpe_a_timed, sharpe_a_const),
+  ann_return       = c(avg_annual_geom_timed, avg_annual_geom_const),
+  max_drawdown     = c(mdd_timed, mdd_const),
+  hit_rate         = c(hit_rate_timed, hit_rate_const),
+  sharpe_monthly   = c(sharpe_m_timed, sharpe_m_const),
+  cum_return       = c(cum_return_timed, cum_return_const)
+)
+
+perf_tbl_2dp <- perf_tbl %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+perf_tbl_2dp
+```
+
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+
+plot_df <- data.frame(
+  date              = predictions$date,        
+  const6040_ret     = const6040*100,                    # constant portfolio monthly return
+  timed_ret         = port_ret_timed*100,               # timing portfolio monthly return
+  model_pred        = pred_num*100                      # predicted ERP(t+1)
+)
+
+# check alignment lengths
+stopifnot(
+  length(plot_df$const6040_ret) == length(plot_df$timed_ret),
+  length(plot_df$timed_ret)     == length(plot_df$model_pred)
+)
+
+# scale model_pred so it can share the same panel
+# pick a linear scaling so both lines are visible
+scale_factor <- (sd(plot_df$timed_ret, na.rm = TRUE) / sd(plot_df$model_pred, na.rm = TRUE))
+# plot_df <- plot_df %>%
+#   mutate(model_pred_scaled = model_pred )
+
+# long format for the two return series
+plot_df_long <- plot_df %>%
+  select(date, const6040_ret, timed_ret, model_pred) %>%
+  pivot_longer(
+    cols = c(const6040_ret, timed_ret),
+    names_to = "series",
+    values_to = "ret"
+  )
+
+# plot
+ggplot() +
+  # constant 60/40 and timed strategy returns
+  geom_line(
+    data = plot_df_long,
+    aes(x = date, y = ret, color = series),
+    linewidth = 1,
+    alpha = 0.6
+  ) +
+  # model prediction on secondary axis (scaled)
+  geom_line(
+    data = plot_df,
+    aes(x = date, y = model_pred),
+    linewidth = 0.5 ,
+    linetype = "twodash"
+  ) +
+  scale_color_manual(
+    values = c("const6040_ret" = "blue",
+               "timed_ret"     = "red",
+               "model_pred" = "black"),  # Color for the dashed line
+    labels = c("const6040_ret" = "60/40 Monthly Return",
+               "timed_ret"     = "Market Timing Monthly Return",
+               "model_pred" = "Forecasted Equity Risk Premium")  # Add label for the dashed line
+  ) +
+  scale_y_continuous(
+    name = "Monthly Portfolio Return (%)",  # Left Y-axis label
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "Forecasted Equity Risk Premium (%)",  # Right Y-axis label 
+    )
+  ) +
+  labs(
+    x = "",
+    color = NULL,
+    title = "Monthly Returns of Market Timing vs Benchmark Portfolio with ERP Forecast"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = c(0.1, 0.1)
+  )
+
+# 1. build cumulative return series
+plot_df_cum <- data.frame(
+  date              = predictions$date,
+  const6040_ret     = const6040,
+  timed_ret         = port_ret_timed,
+  model_pred        = pred_num *100
+)
+
+plot_df_cum <- plot_df_cum %>%
+  mutate(
+    cum_const6040 = (cumprod(1 + const6040_ret) - 1)*100,
+    cum_timed     = (cumprod(1 + timed_ret)     - 1)*100
+  )
+
+# 2. sanity check length match
+stopifnot(
+  length(plot_df_cum$cum_const6040) == length(plot_df_cum$cum_timed),
+  length(plot_df_cum$cum_timed)     == length(plot_df_cum$model_pred)
+)
+
+# 3. rescale model_pred to overlay on same panel
+scale_factor_cum <- (sd(plot_df_cum$cum_timed, na.rm = TRUE) /
+                    sd(plot_df_cum$model_pred, na.rm = TRUE)) /2
+
+plot_df_cum <- plot_df_cum %>%
+  mutate(model_pred_scaled = model_pred * scale_factor_cum)
+
+# 4. long format for cumulative returns
+plot_df_cum_long <- plot_df_cum %>%
+  select(date, cum_const6040, cum_timed) %>%
+  pivot_longer(
+    cols = c(cum_const6040, cum_timed),
+    names_to = "series",
+    values_to = "cum_ret"
+  )
+
+# 5. plot cumulative performance vs forecast signal
+ggplot() +
+  # cumulative returns for constant 60/40 and timed strategy
+  geom_line(
+    data = plot_df_cum_long,
+    aes(x = date, y = cum_ret, color = series),
+    linewidth = 1
+  ) +
+  # forecast signal on secondary axis
+  geom_line(
+    data = plot_df_cum,
+    aes(x = date, y = model_pred_scaled, color = "Forecasted Equity Risk Premium"), # Dummy mapping for legend
+    linewidth = 0.5,
+    linetype = "twodash",
+    show.legend = TRUE
+  ) +
+  scale_color_manual(
+    values = c("cum_const6040" = "blue", 
+               "cum_timed" = "red", 
+               "Forecasted Equity Risk Premium" = "black"),  # Forecast signal color
+    labels = c("cum_const6040" = "60/40 Cumulative Return", 
+               "cum_timed" = "Market Timing Cumulative Return", 
+               "Forecasted Equity Risk Premium" = "Forecasted Equity Risk Premium")  # Add label for forecast signal
+  ) +
+  scale_y_continuous(
+    name = "Cumulative Return (%)",
+    sec.axis = sec_axis(
+      ~ . / scale_factor_cum,
+      name = "Forecasted Equity Risk Premium (%)"
+    )
+  ) +
+  labs(
+    x = "",
+    color = NULL,
+    title = "Cumulative Returns of Market Timing vs Benchmark Portfolio with ERP Forecast"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = c(0.2, 0.9)
+  )
+
+weight_df <- data.frame(
+  date = predictions$date,
+  weight_sp = weight_sp*100
+)
+
+ggplot(weight_df, aes(x = date, y = weight_sp)) +
+  geom_line(linewidth = 0.6, color = "black") +
+  geom_hline(yintercept = 60, linetype = "dashed") +
+  labs(
+    title = "S&P500 Allocation Over Test Period (%), mean = 63%",
+    x = "",
+    y = ""
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = c(0.9, 0.9)
+    )+
+  ylim(40, 80)
+```
+
+
+average sp500 weight (relative to fixed 60)
+
+```{r}
+mean(weight_sp)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
