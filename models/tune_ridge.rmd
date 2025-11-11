@@ -17,13 +17,12 @@ tune_ridge_h1 <- function(df) {
 
   df <- read.csv("../data/stationary_indicators.csv")
   
-  # v
   df_std <- df %>%
     mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% 
     arrange(date) %>%  
     mutate(Y = lead(erp, n = 1))  
 
-  # Create predictor matrix X (all columns except 'date' and 'erp')
+  # Create predictor matrix X 
   predictor_cols <- setdiff(colnames(df_std), c("date", "Y"))
   X <- as.matrix(df_std[, predictor_cols])
   Y <- df_std$Y
@@ -39,7 +38,7 @@ tune_ridge_h1 <- function(df) {
   cat(sprintf("Total observations: %d\n", n_obs))
   cat(sprintf("Number of predictors: %d\n", n_predictors))
 
-  # Define lambda grid for Ridge regression 
+  # Define lambda grid 
   lambda_grid = 10^seq(5, -2, length = 100)  
 
   # Number of observations (n_obs) and minimum training size
@@ -50,7 +49,7 @@ tune_ridge_h1 <- function(df) {
   # Initialize variables to store results
   mse_results <- data.frame(lambda = numeric(0), mse = numeric(0))
 
-  # Folds: i = 128..227  (100 folds)
+  # Folds: 100 folds
   for (i in (min_train_size + 1):rows_count) {
     train_end <- i - 1   
     val_start <- i       
@@ -93,12 +92,12 @@ tune_ridge_h3 <- function(df) {
     arrange(date) %>% 
     mutate(Y = lead(erp, n = 3))  
 
-  # Create predictor matrix X (all columns except 'date' and 'erp')
+  # Create predictor matrix X 
   predictor_cols <- setdiff(colnames(df_std), c("date", "Y"))
   X <- as.matrix(df_std[, predictor_cols])
   Y <- df_std$Y
 
-  # Remove last 3 rows (where Y is NA for t+3) for consistent training/test
+  # Remove last 3 rows (where Y is NA for t+3) 
   valid_rows <- !is.na(Y)
   X_clean <- X[valid_rows, , drop = FALSE]
   Y_clean <- Y[valid_rows]
@@ -120,7 +119,7 @@ tune_ridge_h3 <- function(df) {
   # Initialize variables to store results
   mse_results <- data.frame(lambda = numeric(0), mse = numeric(0))
 
-  # Folds: i = 128..225  (100 folds)
+  # Folds: 100 folds
   for (i in (min_train_size + 1):rows_count) {
     train_end <- i - 1    
     val_start <- i        
@@ -163,12 +162,12 @@ tune_ridge_h6 <- function(df) {
     arrange(date) %>%  
     mutate(Y = lead(erp, n = 6))  
 
-  # Create predictor matrix X (all columns except 'date' and 'erp')
+  # Create predictor matrix X 
   predictor_cols <- setdiff(colnames(df_std), c("date", "Y"))
   X <- as.matrix(df_std[, predictor_cols])
   Y <- df_std$Y
 
-  # Remove last 6 rows (where Y is NA for t+6) for consistent training/test
+  # Remove last 6 rows (where Y is NA for t+6) 
   valid_rows <- !is.na(Y)
   X_clean <- X[valid_rows, , drop = FALSE]
   Y_clean <- Y[valid_rows]
@@ -179,12 +178,11 @@ tune_ridge_h6 <- function(df) {
   cat(sprintf("Total observations: %d\n", n_obs))
   cat(sprintf("Number of predictors: %d\n", n_predictors))
 
-  # Define lambda grid for Ridge regression
   lambda_grid = 10^seq(5, -2, length = 100)  
 
   # Number of observations (n_obs) and minimum training size
   min_train_size  <- 122  # Now 222 observations after shifting by 6 months
-  rows_count      <- nrow(X_clean)          # should be 222
+  rows_count      <- nrow(X_clean)          
   validation_size <- rows_count - min_train_size # should be 100
 
   # Initialize variables to store results
@@ -236,7 +234,7 @@ tune_ridge_h12 <- function(df) {
   X <- as.matrix(df_std[, predictor_cols])
   Y <- df_std$Y
 
-  # Remove last 12 rows (where Y is NA for t+12) for consistent training/test
+  # Remove last 12 rows (where Y is NA for t+12) 
   valid_rows <- !is.na(Y)
   X_clean <- X[valid_rows, , drop = FALSE]
   Y_clean <- Y[valid_rows]
@@ -247,7 +245,6 @@ tune_ridge_h12 <- function(df) {
   cat(sprintf("Total observations: %d\n", n_obs))
   cat(sprintf("Number of predictors: %d\n", n_predictors))
 
-  # Define lambda grid for Ridge regression
   lambda_grid = 10^seq(5, -2, length = 100)  
 
   # Number of observations (n_obs) and minimum training size
