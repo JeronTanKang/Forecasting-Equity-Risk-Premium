@@ -2,6 +2,7 @@ Load packages:
 ```{r}
 library(xgboost)
 library(dplyr)
+library(caret)
 ```
 
 Function for xgboost h step ahead forecast. 
