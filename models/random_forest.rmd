@@ -1,0 +1,43 @@
+Load packages: 
+```{r}
+library(randomForest)
+library(dplyr)
+```
+
+Function for random forest h step ahead forecast. 
+To be used in the model code chunk in forecast_evaluation.rmd. 
+
+NOTE: hardcoded hyperparameter values are taken from the individual tuning scripts
+
+```{r}
+model <- function(df, h) {
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = lead(erp, n = h)) %>% select(date, target, everything())
+
+  df_forecast = df_std %>% slice(n()-h+1)
+  df_train = df_std %>% slice(1:(n() - h))
+
+  feats <- setdiff(names(df_std), c("date", "target"))
+
+  x_train <- df_train[, feats, drop=FALSE]
+  y_train <- df_train$target
+
+  x_forecast <- df_forecast[, feats, drop=FALSE]
+  y_forecast <- df_forecast$target
+
+  set.seed(456857)
+  p <- ncol(x_train)
+
+  # mtry = 8 is tuned value
+  rf_fit <- randomForest(
+    x = x_train,
+    y = y_train,
+    ntree=5000,
+    mtry = 8,
+    importance = TRUE
+  )
+
+  pred <- predict(rf_fit, newdata = x_forecast)
+  return(pred)
+}
+```
