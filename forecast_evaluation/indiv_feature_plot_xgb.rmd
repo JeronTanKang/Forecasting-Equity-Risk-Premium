@@ -1,0 +1,163 @@
+# This code calculates and plots the individual SHAP feature contributions of the XGBoost model 
+# over the forecast window for different horizons (h=1, 3, 6, 12).
+# It accumulates the SHAP values for each feature over multiple rolling windows, 
+# calculates the average absolute SHAP values per feature, and then visualizes the results.
+# Specify the desired forecast horizon h.
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(xgboost)
+library(tidyr)
+```
+```{r}
+# set value of h
+h = 1
+```
+
+```{r}
+# Initialize environment for SHAP accumulation
+xgb_shap_env <- new.env(parent = emptyenv())
+
+# Reset function to clear accumulated SHAP values
+xgb_shap_reset <- function() { 
+  xgb_shap_env$sum <- list(); 
+  xgb_shap_env$n <- integer(0) 
+}
+
+# Function to update SHAP values per horizon
+xgb_shap_update <- function(h, shap_vec) {
+  key <- as.character(h)
+  if (is.null(xgb_shap_env$sum[[key]])) {
+    xgb_shap_env$sum[[key]] <- shap_vec; 
+    xgb_shap_env$n[key] <- 1L
+  } else {
+    alln <- union(names(xgb_shap_env$sum[[key]]), names(shap_vec))
+    a <- xgb_shap_env$sum[[key]][alln]; a[is.na(a)] <- 0
+    b <- shap_vec[alln]; b[is.na(b)] <- 0
+    xgb_shap_env$sum[[key]] <- a + b
+    xgb_shap_env$n[key] <- xgb_shap_env$n[key] + 1L
+  }
+}
+
+# Function to calculate and return the average SHAP values for a given horizon
+xgb_shap_avg <- function(h) {
+  key <- as.character(h)
+  if (is.null(xgb_shap_env$sum[[key]])) return(data.frame(feature=character(0), avg_abs_shap=numeric(0)))
+  avg <- xgb_shap_env$sum[[key]] / as.numeric(xgb_shap_env$n[key])
+  data.frame(feature = names(avg), avg_abs_shap = as.numeric(avg)) |>
+    dplyr::arrange(dplyr::desc(avg_abs_shap))
+}
+
+# Reset SHAP accumulation environment at the start
+xgb_shap_reset()
+```
+
+```{r}
+# Define the model function to fit XGBoost, calculate SHAP values, and update the accumulator
+model <- function(df, h) {
+  
+  # Standardize data and create target variable
+  df_std = df %>% mutate(across(-c(date, erp), ~ as.numeric(scale(.)))) %>% arrange(date)
+  df_std = df_std %>% mutate(target = dplyr::lead(erp, n = h)) %>% select(date, target, everything())
+
+  df_forecast = df_std %>% dplyr::slice(n()-h+1)
+  df_train = df_std %>% dplyr::slice(1:(n() - h))
+
+  feats <- setdiff(names(df_std), c("date", "target"))
+  
+  # Prepare the training data and labels
+  x_train <- as.matrix(df_train[, feats, drop = FALSE])
+  y_train <- df_train$target
+  x_forecast <- as.matrix(df_forecast[, feats, drop = FALSE])
+  
+  # Create DMatrix for XGBoost
+  dtrain <- xgb.DMatrix(data = x_train, label = y_train)
+  dforecast <- xgb.DMatrix(data = x_forecast)
+
+  # Train XGBoost model
+  set.seed(456857)
+  xgb_fit <- xgboost(
+    data = dtrain,
+    objective = "reg:squarederror",
+    eval_metric = "rmse",
+    nrounds = 500,
+    eta = 0.01,
+    max_depth = 2,
+    min_child_weight = 1,
+    subsample = 0.5,
+    colsample_bytree = 0.5,
+    gamma = 0,
+    verbose = 0
+  )
+
+  # Predict for the forecast row
+  pred <- predict(xgb_fit, newdata = dforecast)
+  
+  # SHAP for the forecast row (including BIAS term as last column)
+  sh <- predict(xgb_fit, dforecast, predcontrib = TRUE)
+  sh <- as.numeric(sh[1, ])  # Extract SHAP values for the first row (forecast)
+  names(sh) <- c(feats, "BIAS")
+  
+  # Calculate absolute SHAP values for feature importance
+  sh_feat <- abs(sh[names(sh) != "BIAS"])
+  
+  # Accumulate SHAP values for the current horizon
+  xgb_shap_update(h, sh_feat)
+  
+  return(pred)
+}
+```
+
+```{r}
+# Set window size for the rolling window approach
+WINDOW_SIZE = 100
+model_name = 'model_name'
+
+run_recursive_window <- function(df, model_name) {
+  
+  date_col <- tail(df[[1]], WINDOW_SIZE) 
+  T_total <- nrow(df)
+  
+  # Initialize empty dataframe for storing SHAP results
+  preds_df <- data.frame(
+    date = date_col,              
+    count_technical = rep(NA_integer_, WINDOW_SIZE),
+    count_other = rep(NA_integer_, WINDOW_SIZE)
+  )
+  
+  # Loop over the rolling window
+  for (t in seq(T_total - WINDOW_SIZE + 1, T_total)) { 
+    trim_index <- t - 1
+    test_index <- t - (T_total - WINDOW_SIZE + 1)
+    df_trimmed <- df[0+test_index:trim_index, , drop = FALSE]
+    
+    # Call the model function for SHAP updates
+    counts_list <- model(df_trimmed, h)
+    
+    # Store SHAP counts
+    preds_df$count_technical[test_index + 1] <- counts_list$tech
+    preds_df$count_other[test_index + 1] <- counts_list$other
+    preds_df$total[test_index + 1] <- counts_list$tech + counts_list$other
+  }
+  
+  return(list(preds_df = preds_df))
+}
+
+# Running the model for each horizon
+res <- run_recursive_window(df, model_name)
+```
+
+```{r}
+# Plot SHAP values for each horizon (h = 1, 3, 6, 12)
+avg_shap_h <- xgb_shap_avg(h)
+
+head(avg_shap_h, 20) |>
+  ggplot(aes(x = reorder(feature, avg_abs_shap), y = avg_abs_shap)) +
+  geom_col(fill = "grey70") +
+  coord_flip() +
+  labs(title = paste0("h=", h, " mean |SHAP|"), x = NULL, y = "mean |SHAP|") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 9))
+```
