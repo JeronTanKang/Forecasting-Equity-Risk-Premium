@@ -14,44 +14,86 @@ library(tidyr)
 ```{r}
 # set value of h
 h = 1
+
+df = read.csv("../data/full_df.csv") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
+date_col <- tail(df$date, WINDOW_SIZE) 
+```
+
+```{r}
+
+```
+
+```{r}
+# ----- 4-bucket mapper -----
+assign_group_4way <- function(v) {
+  v0 <- str_remove(v, "_lag\\d+$")              # strip trailing _lagk
+  v0 <- str_remove(v0, "_\\d+_\\d+$")           # strip MA/OBV window suffixes if present
+
+  macro_set  <- c("ret","Rfree","tbl","corpr","AAA","BAA","dfy","dfr","tms",
+                  "lty","ltr","infl","ntis","ndrbl","erp")
+  ratios_set <- c("d12","e12","d_p","d_y","e_p","d_e","b_m")
+  senti_set  <- c("ygap")                 
+  var_set    <- c("impvar","vrp","rsvix","svar")
+  xsec_set   <- c("avgcor","skvw","tail","rdsp","lzrt")
+  other_set  <- c("dtoy","dtoat","Volume") 
+  commod_set <- c("wtexas")
+
+  case_when(
+    str_detect(v0, "^(MA_|MOM|OBV)")                               ~ "Other Stock Market",
+    v0 %in% ratios_set                                             ~ "Valuation (Ratios)",
+    v0 %in% commod_set                                ~ "Commodities",
+    v0 %in% var_set                                   ~ "Variance-Related",
+    v0 %in% xsec_set                                  ~ "Stock Cross-Section",
+    v0 %in% senti_set                                 ~ "Sentiment",
+    v0 %in% other_set                                 ~ "Other Stock Market",
+    v0 %in% macro_set                                 ~ "Macroeconomic"
+  )
+}
 ```
 
 ```{r}
 # Initialize environment for SHAP accumulation
-xgb_shap_env <- new.env(parent = emptyenv())
+xgb_shap_ts <- new.env(parent = emptyenv())
 
 # Reset function to clear accumulated SHAP values
-xgb_shap_reset <- function() { 
-  xgb_shap_env$sum <- list(); 
-  xgb_shap_env$n <- integer(0) 
-}
+xgb_shap_ts_reset <- function() { xgb_shap_ts$mat <- list(); xgb_shap_ts$dates <- list() }
 
 # Function to update SHAP values per horizon
-xgb_shap_update <- function(h, shap_vec) {
+xgb_shap_ts_push  <- function(h, shap_named_vec) {
   key <- as.character(h)
-  if (is.null(xgb_shap_env$sum[[key]])) {
-    xgb_shap_env$sum[[key]] <- shap_vec; 
-    xgb_shap_env$n[key] <- 1L
-  } else {
-    alln <- union(names(xgb_shap_env$sum[[key]]), names(shap_vec))
-    a <- xgb_shap_env$sum[[key]][alln]; a[is.na(a)] <- 0
-    b <- shap_vec[alln]; b[is.na(b)] <- 0
-    xgb_shap_env$sum[[key]] <- a + b
-    xgb_shap_env$n[key] <- xgb_shap_env$n[key] + 1L
-  }
+  df  <- as.data.frame(t(shap_named_vec))  # 1xP, names=features
+  xgb_shap_ts$mat[[key]] <- dplyr::bind_rows(xgb_shap_ts$mat[[key]], df)
+}
+xgb_shap_ts_set_dates <- function(h, dates_vec) {
+  key <- as.character(h); xgb_shap_ts$dates[[key]] <- as.Date(dates_vec)
 }
 
-# Function to calculate and return the average SHAP values for a given horizon
-xgb_shap_avg <- function(h) {
+shap_group_ts <- function(h) {
   key <- as.character(h)
-  if (is.null(xgb_shap_env$sum[[key]])) return(data.frame(feature=character(0), avg_abs_shap=numeric(0)))
-  avg <- xgb_shap_env$sum[[key]] / as.numeric(xgb_shap_env$n[key])
-  data.frame(feature = names(avg), avg_abs_shap = as.numeric(avg)) |>
-    dplyr::arrange(dplyr::desc(avg_abs_shap))
+  M <- xgb_shap_ts$mat[[key]]
+  if (is.null(M) || nrow(M) == 0) return(data.frame())
+  # long format
+  M$.__row <- seq_len(nrow(M))
+  long <- tidyr::pivot_longer(M, -.__row, names_to = "feature", values_to = "abs_shap")
+  long$group <- assign_group_4way(long$feature)
+
+  # attach dates if provided; else index
+  if (!is.null(xgb_shap_ts$dates[[key]]) && length(xgb_shap_ts$dates[[key]]) == nrow(M)) {
+    long$date <- xgb_shap_ts$dates[[key]][long$.__row]
+  } else {
+    long$date <- long$.__row
+  }
+
+  long %>%
+    group_by(date, group) %>%
+    summarise(group_abs_shap = sum(abs_shap, na.rm = TRUE), .groups = "drop") %>%
+    group_by(date) %>%
+    mutate(share = group_abs_shap / sum(group_abs_shap)) %>%
+    ungroup()
 }
 
 # Reset SHAP accumulation environment at the start
-xgb_shap_reset()
+xgb_shap_ts_reset()
 ```
 
 ```{r}
@@ -95,16 +137,15 @@ model <- function(df, h) {
   # Predict for the forecast row
   pred <- predict(xgb_fit, newdata = dforecast)
   
-  # SHAP for the forecast row (including BIAS term as last column)
+
+  # SHAP for the forecast row
   sh <- predict(xgb_fit, dforecast, predcontrib = TRUE)
-  sh <- as.numeric(sh[1, ])  # Extract SHAP values for the first row (forecast)
+  sh <- as.numeric(sh[1, ])   # includes BIAS term as last column
   names(sh) <- c(feats, "BIAS")
+  sh_feat <- abs(sh[names(sh) != "BIAS"])  # use absolute SHAP for aggregation
   
-  # Calculate absolute SHAP values for feature importance
-  sh_feat <- abs(sh[names(sh) != "BIAS"])
-  
-  # Accumulate SHAP values for the current horizon
-  xgb_shap_update(h, sh_feat)
+  # accumulate per-h
+  xgb_shap_ts_push(h, sh_feat)
   
   return(pred)
 }
@@ -151,13 +192,11 @@ res <- run_recursive_window(df, model_name)
 
 ```{r}
 # Plot SHAP values for each horizon (h = 1, 3, 6, 12)
-avg_shap_h <- xgb_shap_avg(h)
+xgb_shap_ts_set_dates(h, date_col)
 
-head(avg_shap_h, 20) |>
-  ggplot(aes(x = reorder(feature, avg_abs_shap), y = avg_abs_shap)) +
-  geom_col(fill = "grey70") +
-  coord_flip() +
-  labs(title = paste0("h=", h, " mean |SHAP|"), x = NULL, y = "mean |SHAP|") +
-  theme_minimal() +
-  theme(axis.text.y = element_text(size = 9))
+gh_ts <- shap_group_ts(h)
+ggplot(gh_ts, aes(x = date, y = group_abs_shap, color = group)) +
+  geom_line() +
+  labs(title = paste0("h=", h, " grouped |SHAP| over time"), x = NULL, y = "sum |SHAP| (per month)") +
+  theme_minimal()
 ```
