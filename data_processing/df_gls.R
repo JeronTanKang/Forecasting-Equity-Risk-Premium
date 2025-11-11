@@ -60,7 +60,12 @@ model_dict <- list(
   MA_spread_2_9 = "constant",
   MA_spread_2_12 = "constant",
   MA_spread_3_9 = "constant",
-  MA_spread_3_12 = "constant"
+  MA_spread_3_12 = "constant",
+  OBV_spread_1_9 = 'trend',
+  OBV_spread_2_9 = 'trend',
+  OBV_spread_2_12 = 'trend',
+  OBV_spread_3_9 = 'trend',
+  OBV_spread_3_12 ='trend'
   
 )
 
@@ -165,4 +170,4 @@ plot_stationarity <- function(df, date_col = "date", cols = NULL, add_trend = TR
   
   print(p)
 }
-plot_stationarity(df_diff, date_col = "date", cols = c('Rfree'))  
+plot_stationarity(df_diff, date_col = "date", cols = c('OBV_spread_3_9'))  
