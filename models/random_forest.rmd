@@ -7,8 +7,6 @@ library(dplyr)
 Function for random forest h step ahead forecast. 
 To be used in the model code chunk in forecast_evaluation.rmd. 
 
-NOTE: hardcoded hyperparameter values are taken from the individual tuning scripts
-
 ```{r}
 # run this cell to get the tuned mtry values for h=1,3,6,12
 
