@@ -1,0 +1,234 @@
+---
+title: "ridgeless_model"
+author: "Jeron Tan"
+date: "2025-10-27"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(rpart)
+library(glmnet)
+library(pls)
+library(tidyr)
+```
+
+
+
+```{r}
+df = read.csv("../data/stationary_indicators.csv") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
+
+h <- 3
+
+df_train_val <- df %>%
+  mutate(Y = lead(erp, h)) %>%
+  filter(!is.na(Y)) %>%
+  select(-date)  
+
+df_train_val
+```
+
+```{r}
+evaluate_model <- function(model_result, test_data) {
+  # standardize the test data using the same mu and sdv from training
+  X_test <- scale(test_data[, model_result$features], center = model_result$mu, scale = model_result$sdv)
+  
+  # generate Random Fourier Features for the test data
+  S_test <- transform_rff_features(X_test, model_result$omegas, model_result$gamma)
+  
+  # make predictions using the trained model 
+  predictions <- S_test %*% model_result$coefficients
+  
+  true_value <- test_data$Y
+  
+  rmse <- sqrt(mean((predictions - true_value)^2, na.rm = TRUE))
+  return(rmse)
+}
+
+train_model <- function(df_train, P, z, gamma) {
+  df_train <- df_train %>% drop_na()
+  
+  # target variable
+  y_train <- df_train$Y
+  
+  # all features other than target variable (date alr removed)
+  X_train <- df_train[, setdiff(names(df_train), "Y")] 
+
+  # standardize features
+  mu <- colMeans(X_train, na.rm = TRUE)  
+  sdv <- apply(X_train, 2, sd, na.rm = TRUE) 
+  X_train <- scale(X_train, center = mu, scale = sdv)  
+  
+  #print(X_train)
+
+  # use helper functions to generate random fourier features
+  rff_obj <- build_rff_features(X_train, P, gamma, seed = 123)
+  S_train <- rff_obj$S  # S is the expanded higher dimensional features
+  omegas <- rff_obj$omegas  # omega is the random projections for linear combinations of G to S
+  
+  # uncomment to check
+  #print(omegas)
+
+  # compute coefficient beta 
+  if (z == 0) {
+    # SVD if z = 0 (
+    svd_decomp <- svd(S_train)
+    tol <- 1e-10  # tolerance for small singular values
+    Dplus <- diag(ifelse(svd_decomp$d > tol, 1/svd_decomp$d, 0))
+    beta_ridge <- svd_decomp$v %*% Dplus %*% t(svd_decomp$u) %*% y_train  # Pseudo-inverse via SVD
+  } else {
+    # ridge regression if penalty nonzero
+    I <- diag(ncol(S_train))
+    beta_ridge <- solve(t(S_train) %*% S_train + z * I) %*% t(S_train) %*% y_train  # just the standard ridge regression
+  }
+  
+  # return trained model
+  return(list(coefficients = beta_ridge, omegas = omegas, gamma = gamma, features = colnames(X_train), mu = mu, sdv = sdv))
+}
+
+# this function below is used for train-val tuning
+build_rff_features <- function(X, num_features, gamma, seed) {
+  stopifnot(num_features %% 2 == 0)  # make sure num_features is even since num_features = P = 2M
+  set.seed(seed)
+  
+  half   <- num_features / 2L       # M 
+  D      <- ncol(X)                 # G i.e. number of features in X 
+  
+  # generate omegas which are the random projections 
+  # they define the Fourier basis, they are random and generated from the standard normal
+  
+  omegas <- matrix(rnorm(half * D), nrow = half, ncol = D)
+  
+  # linear projections of the data
+  proj   <- X %*% t(omegas)
+  
+  # init S
+  S <- matrix(NA_real_, nrow = nrow(X), ncol = num_features)
+  
+  # apply sine and cosine transformations to the linear combinations created by projecting omega on X
+  S[, seq(1, num_features, 2)] <- sin(gamma * proj)
+  S[, seq(2, num_features, 2)] <- cos(gamma * proj)
+  
+  list(S = S, omegas = omegas, gamma = gamma)
+}
+
+# this function below is used for evaluation prediction
+transform_rff_features <- function(X_new, omegas, gamma) {
+  half <- nrow(omegas)      
+  P    <- 2L * half         
+  
+  proj <- X_new %*% t(omegas)
+  
+  S    <- matrix(NA_real_, nrow = nrow(X_new), ncol = P)
+  
+  S[, seq(1, P, 2)] <- sin(gamma * proj)
+  S[, seq(2, P, 2)] <- cos(gamma * proj)
+  
+  return(S)
+}
+
+```
+
+for checking 
+```{r}
+#temp <- train_model(df_train_val, 4, 0.1, 1)
+```
+
+
+
+```{r}
+# param_grid <- expand.grid(
+#   P = c(1000, 1500, 2000),
+#   z = c(0, 10^-6, 0.1),
+#   gamma = c(0.2, 0.5, 1)
+# ) # this is 27 permutations hence xx mins
+
+# param_grid <- expand.grid(
+#   P = c(2000),
+#   z = c(10^-6),
+#   gamma = c(0.2, 1, 2)
+# ) # 12 permutations should take 8 mins
+
+param_grid <- expand.grid(
+  P = c(1000, 2000),
+  z = c(0, 10^-6, 0.1),
+  gamma = c(0.2, 1, 2)
+) 
+
+best_performance <- -Inf
+best_params <- list()
+
+# data frame to store performance for each combination
+performance_results <- data.frame(P = integer(), z = numeric(), gamma = numeric(), avg_performance = numeric())
+
+# data set size is 227 -h
+# adjust initial_train_size based on how many validation samples u want
+initial_train_size <- 186  
+
+# loop thru all permutations
+for (params in 1:nrow(param_grid)) {
+  P_val <- param_grid$P[params]
+  z_val <- param_grid$z[params]
+  gamma_val <- param_grid$gamma[params]
+
+  fold_performance <- numeric() 
+
+  # recursive window cross-validation
+  for (t in (initial_train_size + 1):(nrow(df_train_val) - 1)) {
+    # split into train and validation
+    train_data <- df_train_val[1:t, ]
+    test_data <- df_train_val[t + 1, , drop = FALSE]
+
+    # train model on training data
+    model_result <- train_model(train_data, P = P_val, z = z_val, gamma = gamma_val)
+
+    # evaluate model on the test data
+    performance_metric <- evaluate_model(model_result, test_data) 
+    
+    fold_performance <- c(fold_performance, performance_metric)
+  }
+  
+  # the average performance across all folds
+  avg_performance <- mean(fold_performance)
+
+  # performance results for the current combination
+  performance_results <- rbind(performance_results, data.frame(P = P_val, z = z_val, gamma = gamma_val, avg_performance = avg_performance))
+
+  # track best parameters based on the average performance
+  if (avg_performance > best_performance) {
+    best_performance <- avg_performance
+    best_params <- list(P = P_val, z = z_val, gamma = gamma_val)
+  }
+}
+
+print("Best Parameters:")
+print(best_params)
+
+print("Performance Results Across the Grid:")
+print(performance_results)
+```
+```{r}
+best_params
+```
+sort based on lowest P-OOS error
+```{r}
+performance_results %>%
+  arrange(avg_performance)
+```
+
+
+
+
+
+
+
+
+
