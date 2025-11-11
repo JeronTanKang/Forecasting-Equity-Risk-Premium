@@ -14,6 +14,8 @@ library(tidyr)
 ```{r}
 # set value of h
 h = 1
+
+df = read.csv("../data/full_df.csv") %>% mutate(date = as.Date(date, format = "%m/%d/%y")) 
 ```
 
 ```{r}
