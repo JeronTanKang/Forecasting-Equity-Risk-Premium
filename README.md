@@ -32,8 +32,6 @@ We target the realized (ex-post) ERP: the S&P 500 total return (including divide
 
 Benchmark portfolio: static 60/40 with S&P 500 total return (equities) and IEF (intermediate U.S. Treasuries). The 60/40 mix is a widely used reference, offering diversification and drawdown mitigation and approximating a moderate-risk efficient allocation (e.g., Markowitz, 1952).
 
-![S&P 500 vs IEF cumulative returns](sp_ief_ret.png)
-
 Summary stats (annualized, evaluation period):
 
 | Asset   | Return (%) | Volatility (%) |
