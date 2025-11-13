@@ -12,10 +12,6 @@ At the same time, the number of proposed predictors has grown large (macro, valu
 
 We study whether machine-learning methods can extract a stable predictive signal for the monthly ERP in this high-dimensional setting.
 
-## Contribution
-
-1) Treat ERP forecasting as a high-dimensional prediction problem and evaluate pseudo out-of-sample forecasts using statistical measures (oos R², RMSE, Diebold–Mariano tests) and economic value (a market-timing evaluation). Unlike one-at-a-time tests, we combine a large predictor set jointly and apply methods suited to P≈N or P>N, including shrinkage estimators and factor extraction.  
-2) Implement the ridgeless regression framework of Kelly et al. (2024) and test whether its reported benefits persist with our predictors, sample period, multiple horizons, and allocation framework.
 
 ### Equity Risk Premium Definition
 
