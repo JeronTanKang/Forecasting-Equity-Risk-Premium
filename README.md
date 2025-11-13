@@ -113,21 +113,21 @@ The 60/40 benchmark is included for reference.
 <table>
   <tr>
     <td width="50%">
-      <img src="lasso_v2_h1_cumulative_ret.png" alt="Lasso_v2 (h=1): Cumulative Return" />
+      <img src="plots/lasso_v2_h1_cumulative_ret.png" alt="Lasso_v2 (h=1): Cumulative Return" />
       <p align="center"><em>Lasso_v2 (h=1): Cumulative Return</em></p>
     </td>
     <td width="50%">
-      <img src="lasso_v2_h1_monthly_ret.png" alt="Lasso_v2 (h=1): Monthly Return" />
+      <img src="plots/lasso_v2_h1_monthly_ret.png" alt="Lasso_v2 (h=1): Monthly Return" />
       <p align="center"><em>Lasso_v2 (h=1): Monthly Return</em></p>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="lasso_v2_h1_forecast_vs_actual.png" alt="Lasso_v2 (h=1): ERP Forecast vs Actual" />
+      <img src="plots/lasso_v2_h1_forecast_vs_actual.png" alt="Lasso_v2 (h=1): ERP Forecast vs Actual" />
       <p align="center"><em>Lasso_v2 (h=1): ERP Forecast vs Actual</em></p>
     </td>
     <td width="50%">
-      <img src="lasso_v2_h1_weight.png" alt="Lasso_v2 (h=1): Equity Weight" />
+      <img src="plots/lasso_v2_h1_weight.png" alt="Lasso_v2 (h=1): Equity Weight" />
       <p align="center"><em>Lasso_v2 (h=1): Equity Weight</em></p>
     </td>
   </tr>
@@ -142,17 +142,17 @@ The 60/40 benchmark is included for reference.
 <table>
   <tr>
     <td width="50%">
-      <img src="ridgeless_h6_cumulative_ret.png" alt="Ridgeless (h=6): Cumulative Return" />
+      <img src="plots/ridgeless_h6_cumulative_ret.png" alt="Ridgeless (h=6): Cumulative Return" />
       <p align="center"><em>Ridgeless (h=6): Cumulative Return</em></p>
     </td>
     <td width="50%">
-      <img src="ridgeless_h6_monthly_ret.png" alt="Ridgeless (h=6): Monthly Return" />
+      <img src="plots/ridgeless_h6_monthly_ret.png" alt="Ridgeless (h=6): Monthly Return" />
       <p align="center"><em>Ridgeless (h=6): Monthly Return</em></p>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="ridgeless_h6_forecast_vs_actual.png" alt="Ridgeless (h=6): ERP Forecast vs Actual" />
+      <img src="plots/ridgeless_h6_forecast_vs_actual.png" alt="Ridgeless (h=6): ERP Forecast vs Actual" />
       <p align="center"><em>Ridgeless (h=6): ERP Forecast vs Actual</em></p>
     </td>
     <td width="50%">
