@@ -156,7 +156,7 @@ The 60/40 benchmark is included for reference.
       <p align="center"><em>Ridgeless (h=6): ERP Forecast vs Actual</em></p>
     </td>
     <td width="50%">
-      <img src="ridgeless_h6_weight.png" alt="Ridgeless (h=6): Equity Weight" />
+      <img src="plots/ridgeless_h6_weight.png" alt="Ridgeless (h=6): Equity Weight" />
       <p align="center"><em>Ridgeless (h=6): Equity Weight</em></p>
     </td>
   </tr>
