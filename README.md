@@ -1,14 +1,6 @@
 # Forecasting-Equity-Risk-Premium
 
-## Project Summary
 
-- **Objective:** Forecast the U.S. equity risk premium (ERP) at monthly horizons (e.g., h = 1, 3) and evaluate economic value versus a prevailing-mean benchmark.  
-- **Data:** Macro-financial predictors (e.g., Goyal–Welch variables), term/credit spreads, volatility/liquidity measures, and technical indicators with publication-lag handling.  
-- **Models:** Baseline prevailing mean; regularized linear models (ridge, lasso, elastic-net); dimension-reduction (PLS, PCR); tree/ensemble (random forest); optional ridgeless RFF.  
-- **Evaluation:** Expanding-window CV; out-of-sample R², RMSE; Diebold–Mariano (MSE loss) for pairwise significance; robustness across horizons/subsamples.  
-- **Economic value:** Market-timing and portfolio tests (e.g., dynamic vs 60/40), transaction-cost sensitivity.
-
----
 
 ---
 
