@@ -6,7 +6,7 @@
 
 ## Introduction
 
-Equity risk premium (ERP) forecasting asks whether excess equity returns are predictable using information such as valuation ratios, interest rates, yield spreads, and activity/slack indicators. Many variables look predictive in-sample, but out-of-sample—especially monthly—most lose power; signal-to-noise is low and out-of-sample R² values are often near zero or negative (e.g., Goyal et al., 2024).
+Equity risk premium (ERP) forecasting asks whether excess equity returns are predictable using information such as valuation ratios, interest rates, yield spreads, and activity/slack indicators. Many variables look predictive in-sample, but out-of-sample—especially monthly—most lose power; signal-to-noise is low and out-of-sample R² values are often near zero or negative (Goyal et al., 2024).
 
 At the same time, the number of proposed predictors has grown large (macro, valuation, term-structure, credit, volatility/liquidity, and technical indicators). This yields a high-dimensional setting where P can approach or exceed N; unrestricted OLS becomes unstable due to multicollinearity and overfitting. Prior work uses shrinkage (ridge, lasso) and factor-based methods (principal components, partial least squares).
 
@@ -26,7 +26,7 @@ We target the realized (ex-post) ERP: the S&P 500 total return (including divide
 
 ## Market-Timing Strategy
 
-Benchmark portfolio: static 60/40 with S&P 500 total return (equities) and IEF (intermediate U.S. Treasuries). The 60/40 mix is a widely used reference, offering diversification and drawdown mitigation and approximating a moderate-risk efficient allocation (e.g., Markowitz, 1952).
+Benchmark portfolio: static 60/40 with S&P 500 total return (equities) and IEF (intermediate U.S. Treasuries). The 60/40 mix is a widely used reference, offering diversification and drawdown mitigation and approximating a moderate-risk efficient allocation.
 
 Summary stats (annualized, evaluation period):
 
