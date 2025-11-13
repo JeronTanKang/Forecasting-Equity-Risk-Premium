@@ -1,9 +1,6 @@
 # Forecasting-Equity-Risk-Premium
 
 
-
----
-
 ## Introduction
 
 Equity risk premium (ERP) forecasting asks whether excess equity returns are predictable using information such as valuation ratios, interest rates, yield spreads, and activity/slack indicators. Many variables look predictive in-sample, but out-of-sample—especially monthly—most lose power; signal-to-noise is low and out-of-sample R² values are often near zero or negative (Goyal et al., 2024).
