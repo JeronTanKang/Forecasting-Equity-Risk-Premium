@@ -59,55 +59,52 @@ The 60/40 benchmark is included for reference.
 
 ## Portfolio Metrics and Performance Analytics
 
-**Market-timing strategies vs 60/40 across horizons; sorted by annualized Sharpe.**
+**Table: Market timing strategies vs. 60/40 benchmark for different horizons. Strategies sorted by ann. Sharpe.**
 
-Forecast horizon, h ∈ {1, 3, 6, 12}
-
-**60/40 Benchmark:** Sharpe 0.77 | Return 7.4% | Max DD 20.3% | Hit Rate —
-
-**h = 1**  
-- Lasso v2 (highest Sharpe): 0.91 | 8.6% | 21.2% | 51  
-- Ridgeless: 0.87 | 8.1% | 20.3% | 56  
-- Ensemble: 0.85 | 7.7% | 21.1% | 53  
-- Elastic Net: 0.76 | 7.7% | 22.0% | 45  
-- Lasso v1: 0.75 | 7.0% | 19.4% | 48  
-- Ridge: 0.74 | 6.7% | 19.4% | 46  
-- PLS: 0.73 | 7.4% | 19.4% | 54  
-- Random Forest: 0.64 | 6.0% | 23.0% | 47  
-- XGBoost: 0.53 | 5.3% | 23.6% | 42
-
-**h = 3**  
-- Lasso v2 (highest Sharpe): 0.94 | 8.8% | 17.1% | 54  
-- XGBoost: 0.89 | 8.5% | 17.4% | 53  
-- Ensemble: 0.82 | 7.4% | 18.8% | 50  
-- Lasso v1: 0.81 | 7.8% | 23.1% | 51  
-- Random Forest: 0.78 | 7.0% | 21.0% | 53  
-- Ridgeless: 0.76 | 7.6% | 21.8% | 53  
-- Ridge: 0.69 | 6.8% | 19.2% | 51  
-- Elastic Net: 0.69 | 6.8% | 19.2% | 51  
-- PLS: 0.61 | 4.8% | 18.7% | 36
-
-**h = 6**  
-- Ridgeless (highest Sharpe): 0.98 | 10.1% | 18.7% | 59  
-- XGBoost: 0.94 | 8.6% | 19.4% | 57  
-- Ensemble: 0.83 | 7.3% | 19.0% | 54  
-- Lasso v2: 0.78 | 6.6% | 20.0% | 45  
-- Random Forest: 0.75 | 7.0% | 20.0% | 59  
-- Lasso v1: 0.73 | 6.2% | 21.3% | 42  
-- Ridge: 0.79 | 9.7% | 22.0% | 65  
-- Elastic Net: 0.78 | 9.7% | 22.0% | 65  
-- PLS: 0.61 | 4.7% | 18.7% | 33
-
-**h = 12**  
-- XGBoost (highest Sharpe): 1.03 | 9.8% | 15.8% | 58  
-- Ensemble: 0.96 | 8.6% | 18.9% | 53  
-- Elastic Net: 0.92 | 9.2% | 18.1% | 54  
-- Random Forest: 0.92 | 9.0% | 22.0% | 52  
-- Ridgeless: 0.80 | 8.0% | 22.1% | 47  
-- PLS: 0.88 | 6.9% | 18.7% | 44  
-- Lasso v2: 0.86 | 8.5% | 18.0% | 53  
-- Ridge: 0.78 | 9.5% | 22.0% | 64  
-- Lasso v1: 0.77 | 8.8% | 18.3% | 60
+| Strategy | Ann. Sharpe | Ann. Return (%) | Max Drawdown (%) | Hit Rate (%) |
+|---|---:|---:|---:|---:|
+| **Forecast horizon, _h_ ∈ {1, 3, 6, 12}** ||||| 
+| 60/40 Benchmark | 0.77 | 7.4 | 20.3 | — |
+| **h = 1** ||||| 
+| Lasso v2 (highest Sharpe) | 0.91 | 8.6 | 21.2 | 51 |
+| Ridgeless | 0.87 | 8.1 | 20.3 | 56 |
+| Ensemble | 0.85 | 7.7 | 21.1 | 53 |
+| Elastic Net | 0.76 | 7.7 | 22.0 | 45 |
+| Lasso v1 | 0.75 | 7.0 | 19.4 | 48 |
+| Ridge | 0.74 | 6.7 | 19.4 | 46 |
+| PLS | 0.73 | 7.4 | 19.4 | 54 |
+| Random Forest | 0.64 | 6.0 | 23.0 | 47 |
+| XGBoost | 0.53 | 5.3 | 23.6 | 42 |
+| **h = 3** ||||| 
+| Lasso v2 (highest Sharpe) | 0.94 | 8.8 | 17.1 | 54 |
+| XGBoost | 0.89 | 8.5 | 17.4 | 53 |
+| Ensemble | 0.82 | 7.4 | 18.8 | 50 |
+| Lasso v1 | 0.81 | 7.8 | 23.1 | 51 |
+| Random Forest | 0.78 | 7.0 | 21.0 | 53 |
+| Ridgeless | 0.76 | 7.6 | 21.8 | 53 |
+| Ridge | 0.69 | 6.8 | 19.2 | 51 |
+| Elastic Net | 0.69 | 6.8 | 19.2 | 51 |
+| PLS | 0.61 | 4.8 | 18.7 | 36 |
+| **h = 6** ||||| 
+| Ridgeless (highest Sharpe) | 0.98 | 10.1 | 18.7 | 59 |
+| XGBoost | 0.94 | 8.6 | 19.4 | 57 |
+| Ensemble | 0.83 | 7.3 | 19.0 | 54 |
+| Lasso v2 | 0.78 | 6.6 | 20.0 | 45 |
+| Random Forest | 0.75 | 7.0 | 20.0 | 59 |
+| Lasso v1 | 0.73 | 6.2 | 21.3 | 42 |
+| Ridge | 0.79 | 9.7 | 22.0 | 65 |
+| Elastic Net | 0.78 | 9.7 | 22.0 | 65 |
+| PLS | 0.61 | 4.7 | 18.7 | 33 |
+| **h = 12** ||||| 
+| XGBoost (highest Sharpe) | 1.03 | 9.8 | 15.8 | 58 |
+| Ensemble | 0.96 | 8.6 | 18.9 | 53 |
+| Elastic Net | 0.92 | 9.2 | 18.1 | 54 |
+| Random Forest | 0.92 | 9.0 | 22.0 | 52 |
+| Ridgeless | 0.80 | 8.0 | 22.1 | 47 |
+| PLS | 0.88 | 6.9 | 18.7 | 44 |
+| Lasso v2 | 0.86 | 8.5 | 18.0 | 53 |
+| Ridge | 0.78 | 9.5 | 22.0 | 64 |
+| Lasso v1 | 0.77 | 8.8 | 18.3 | 60 |
 
 ## References
 
