@@ -111,18 +111,15 @@ Forecast horizon, h ∈ {1, 3, 6, 12}
 
 ## References
 
-
-	•	Diebold, F. X., & Mariano, R. S. (1995). Comparing predictive accuracy. Journal of Business & Economic Statistics, 13(3), 253–263.
-	•	Fernández, P. (2006). Equity premium: Historical, expected, required and implied. Technical Report WP-661, IESE Business School.
-	•	Goyal, A., Welch, I., & Zafirov, A. (2024a). A comprehensive 2022 look at the empirical performance of equity premium prediction. Review of Financial Studies, 37, 3490–3557.
-	•	Goyal, A., Welch, I., & Zafirov, A. (2024b). A comprehensive 2022 look at the empirical performance of equity premium prediction — all data up to 2024 (excel, full-sample). Excel link on page; includes GW (2008) and GWZ (2024).
-	•	Hastie, T., Montanari, A., Rosset, S., & Tibshirani, R. J. (2022). Surprises in high-dimensional ridgeless least squares interpolation. The Annals of Statistics, 50(2), 949–986.
-	•	Kelly, B., Pruitt, S., & Su, Y. (2024). The virtue of complexity in return prediction. Working paper. High-dimensional ridgeless regression and market timing in asset returns.
-	•	Markowitz, H. (1952). Portfolio selection. The Journal of Finance, 7(1), 77–91.
-	•	Neely, C. J., Rapach, D., Tu, J., & Zhou, G. (2014). Forecasting the equity risk premium: The role of technical indicators. Available at SSRN.
-	•	Pham, N., Cui, B., & Ruthbah, U. (2025). The performance of the 60/40 portfolio: A historical perspective. Technical report, CFA Institute. Stocks provide long-run return, bonds provide diversification and drawdown protection.
-
-
+- Diebold, F. X., & Mariano, R. S. (1995). Comparing predictive accuracy. *Journal of Business & Economic Statistics, 13*(3), 253–263.  
+- Fernández, P. (2006). Equity premium: Historical, expected, required and implied. Technical Report WP-661, IESE Business School.  
+- Goyal, A., Welch, I., & Zafirov, A. (2024a). A comprehensive 2022 look at the empirical performance of equity premium prediction. *Review of Financial Studies, 37*, 3490–3557.  
+- Goyal, A., Welch, I., & Zafirov, A. (2024b). A comprehensive 2022 look at the empirical performance of equity premium prediction — all data up to 2024 (excel, full-sample). Excel link on page; includes GW (2008) and GWZ (2024).  
+- Hastie, T., Montanari, A., Rosset, S., & Tibshirani, R. J. (2022). Surprises in high-dimensional ridgeless least squares interpolation. *The Annals of Statistics, 50*(2), 949–986.  
+- Kelly, B., Pruitt, S., & Su, Y. (2024). The virtue of complexity in return prediction. Working paper. High-dimensional ridgeless regression and market timing in asset returns.  
+- Markowitz, H. (1952). Portfolio selection. *The Journal of Finance, 7*(1), 77–91.  
+- Neely, C. J., Rapach, D., Tu, J., & Zhou, G. (2014). Forecasting the equity risk premium: The role of technical indicators. Available at SSRN.  
+- Pham, N., Cui, B., & Ruthbah, U. (2025). The performance of the 60/40 portfolio: A historical perspective. Technical report, CFA Institute. Stocks provide long-run return, bonds provide diversification and drawdown protection.
 ---
 ## How to Download This Repository
 
