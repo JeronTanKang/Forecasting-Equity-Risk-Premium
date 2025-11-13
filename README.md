@@ -106,6 +106,63 @@ The 60/40 benchmark is included for reference.
 | Ridge | 0.78 | 9.5 | 22.0 | 64 |
 | Lasso v1 | 0.77 | 8.8 | 18.3 | 60 |
 
+<!-- ==== Lasso_v2 (h = 1) ==== -->
+
+<h3 id="lasso-h1">Lasso_v2 (h = 1)</h3>
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="lasso_v2_h1_cumulative_ret.png" alt="Lasso_v2 (h=1): Cumulative Return" />
+      <p align="center"><em>Lasso_v2 (h=1): Cumulative Return</em></p>
+    </td>
+    <td width="50%">
+      <img src="lasso_v2_h1_monthly_ret.png" alt="Lasso_v2 (h=1): Monthly Return" />
+      <p align="center"><em>Lasso_v2 (h=1): Monthly Return</em></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="lasso_v2_h1_forecast_vs_actual.png" alt="Lasso_v2 (h=1): ERP Forecast vs Actual" />
+      <p align="center"><em>Lasso_v2 (h=1): ERP Forecast vs Actual</em></p>
+    </td>
+    <td width="50%">
+      <img src="lasso_v2_h1_weight.png" alt="Lasso_v2 (h=1): Equity Weight" />
+      <p align="center"><em>Lasso_v2 (h=1): Equity Weight</em></p>
+    </td>
+  </tr>
+</table>
+
+<br/>
+
+<!-- ==== Ridgeless (h = 6) ==== -->
+
+<h3 id="ridgeless-h6">Ridgeless (h = 6)</h3>
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="ridgeless_h6_cumulative_ret.png" alt="Ridgeless (h=6): Cumulative Return" />
+      <p align="center"><em>Ridgeless (h=6): Cumulative Return</em></p>
+    </td>
+    <td width="50%">
+      <img src="ridgeless_h6_monthly_ret.png" alt="Ridgeless (h=6): Monthly Return" />
+      <p align="center"><em>Ridgeless (h=6): Monthly Return</em></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="ridgeless_h6_forecast_vs_actual.png" alt="Ridgeless (h=6): ERP Forecast vs Actual" />
+      <p align="center"><em>Ridgeless (h=6): ERP Forecast vs Actual</em></p>
+    </td>
+    <td width="50%">
+      <img src="ridgeless_h6_weight.png" alt="Ridgeless (h=6): Equity Weight" />
+      <p align="center"><em>Ridgeless (h=6): Equity Weight</em></p>
+    </td>
+  </tr>
+</table>
+
+
 ## References
 
 - Diebold, F. X., & Mariano, R. S. (1995). Comparing predictive accuracy. *Journal of Business & Economic Statistics, 13*(3), 253–263.  
